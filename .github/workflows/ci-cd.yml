@@ -88,6 +88,7 @@ jobs:
   deploy:
     name: Deploy
     runs-on: ubuntu-latest
+    environment: deployment
     needs:
       - compile
       - test
@@ -109,19 +110,19 @@ jobs:
       - name: Add server to known hosts
         run: |
           mkdir -p ~/.ssh
-          ssh-keyscan -p "${{ secrets.DEPLOY_PORT }}" -H "${{ secrets.DEPLOY_HOST }}" >> ~/.ssh/known_hosts
+          ssh-keyscan -p "${{ env.DEPLOY_PORT }}" -H "${{ env.DEPLOY_HOST }}" >> ~/.ssh/known_hosts
 
       - name: Sync application bundle to server
         run: |
           rsync -avz --delete \
             --no-perms \
             --chmod=Du=rwx,Dg=rwx,Do=rx,Fu=rw,Fg=rw,Fo=r \
-            -e "ssh -p ${{ secrets.DEPLOY_PORT }}" \
+            -e "ssh -p ${{ env.DEPLOY_PORT }}" \
             deploy/ \
-            "${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}:${{ secrets.DEPLOY_PATH }}/"
+            "${{ env.DEPLOY_USER }}@${{ env.DEPLOY_HOST }}:${{ env.DEPLOY_PATH }}/"
 
       - name: Restart application service
         run: |
-          ssh -p "${{ secrets.DEPLOY_PORT }}" \
-            "${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}" \
-            "sudo systemctl restart '${{ secrets.DEPLOY_SERVICE }}'"
+          ssh -p "${{ env.DEPLOY_PORT }}" \
+            "${{ env.DEPLOY_USER }}@${{ env.DEPLOY_HOST }}" \
+            "sudo systemctl restart '${{ env.DEPLOY_SERVICE }}'"
