@@ -1,0 +1,16 @@
+[Unit]
+Description={{ node_service_description }}
+After=network.target
+
+[Service]
+Type=simple
+User={{ deploy_user }}
+Group={{ deploy_group }}
+WorkingDirectory={{ deploy_path }}
+EnvironmentFile={{ node_service_env_file }}
+ExecStart=/usr/bin/node {{ deploy_path }}/server.js
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

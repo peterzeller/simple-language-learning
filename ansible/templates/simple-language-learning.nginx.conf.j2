@@ -1,0 +1,53 @@
+server {
+    listen 443 ssl;
+    listen [::]:443 ssl;
+    server_name {{ server_name }};
+
+{% if nginx_access_log %}
+    access_log {{ nginx_access_log }};
+{% endif %}
+{% if nginx_error_log %}
+    error_log {{ nginx_error_log }};
+{% endif %}
+
+    client_max_body_size {{ nginx_client_max_body_size }};
+
+{% if nginx_extra_https_config_before_app %}
+{{ nginx_extra_https_config_before_app | indent(4, true) }}
+{% endif %}
+
+    location / {
+        proxy_pass http://127.0.0.1:{{ node_app_port }};
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_cache_bypass $http_upgrade;
+    }
+
+{% if nginx_extra_https_config_after_app %}
+{{ nginx_extra_https_config_after_app | indent(4, true) }}
+{% endif %}
+
+
+    ssl_certificate /etc/letsencrypt/live/langlearn.peeeq.de/fullchain.pem; # managed by Certbot
+    ssl_certificate_key /etc/letsencrypt/live/langlearn.peeeq.de/privkey.pem; # managed by Certbot
+    include /etc/letsencrypt/options-ssl-nginx.conf;
+    ssl_dhparam /etc/letsencrypt/ssl-dhparams.pem;
+}
+
+server {
+    listen 80;
+    listen [::]:80;
+    server_name {{ server_name }};
+
+{% if nginx_extra_http_config %}
+{{ nginx_extra_http_config | indent(4, true) }}
+{% endif %}
+
+    return 301 https://$host$request_uri;
+}

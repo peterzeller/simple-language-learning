@@ -1,0 +1,42 @@
+---
+app_name: simple-language-learning
+
+deploy_user: deploy
+deploy_group: deploy
+deploy_extra_groups:
+  - www-data
+deploy_user_home: "/home/{{ deploy_user }}"
+deploy_authorized_keys:
+  - "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIMYbWp9WKdj0ig1wzJ//KtamI1OifxnvCoDLEM1TMYNl peter@Peters-Air"
+  - "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIPGhu5darpg868O8l8kTquslb0elG+JxY5VxXKpjJmfL peter.peq@gmail.com"
+
+deploy_root: /var/www
+deploy_path: "{{ deploy_root }}/{{ app_name }}"
+
+nginx_site_name: "{{ app_name }}"
+server_name: langlearn.peeeq.de
+disable_default_nginx_site: true
+nginx_server_names_hash_bucket_size: 64
+nginx_tls_cert_name: peeeq.de
+nginx_access_log: /var/log/nginx/localhost.access.log
+nginx_error_log: /var/log/nginx/file.log warn
+nginx_client_max_body_size: 100M
+nginx_extra_https_config_before_app: ""
+nginx_extra_https_config_after_app: ""
+nginx_extra_http_config: ""
+
+node_service_name: "{{ app_name }}"
+node_service_description: "Simple Language Learning Next.js application"
+node_app_port: 3000
+node_service_env_file: "/etc/{{ app_name }}.env"
+
+postgres_manage_app_role: false
+postgres_manage_app_db: false
+postgres_runtime_host: "127.0.0.1"
+postgres_runtime_user: "{{ postgres_app_user }}"
+postgres_runtime_db: "{{ postgres_app_db }}"
+postgres_app_user: "{{ app_name }}"
+postgres_app_role_flags: "LOGIN"
+postgres_app_db: "{{ app_name }}"
+
+app_env: {}

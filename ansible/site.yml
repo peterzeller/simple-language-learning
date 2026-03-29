@@ -1,0 +1,299 @@
+---
+- name: Provision the simple-language-learning server
+  hosts: web
+  become: true
+  gather_facts: true
+
+  pre_tasks:
+    # - name: Verify the playbook is running against Ubuntu 24
+    #   ansible.builtin.assert:
+    #     that:
+    #       - ansible_facts["distribution"] == "Ubuntu"
+    #       - ansible_facts["distribution_major_version"] == "24"
+    #     fail_msg: >-
+    #       This playbook is intended for Ubuntu 24 LTS hosts.
+    #       Detected distribution={{ ansible_facts["distribution"] | default("unknown") }}
+    #       version={{ ansible_facts["distribution_version"] | default("unknown") }}
+    #       major={{ ansible_facts["distribution_major_version"] | default("unknown") }}.
+
+    - name: Refresh apt cache
+      ansible.builtin.apt:
+        update_cache: true
+        cache_valid_time: 3600
+
+  tasks:
+    - name: Install base packages
+      ansible.builtin.apt:
+        name:
+          - ca-certificates
+          - curl
+          - gnupg
+          - nginx
+          - postgresql
+          - postgresql-contrib
+          - python3-psycopg2
+          - rsync
+        state: present
+
+    - name: Ensure the NodeSource keyring directory exists
+      ansible.builtin.file:
+        path: /etc/apt/keyrings
+        state: directory
+        owner: root
+        group: root
+        mode: "0755"
+
+    - name: Install the NodeSource apt signing key
+      ansible.builtin.get_url:
+        url: https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key
+        dest: /etc/apt/keyrings/nodesource.asc
+        owner: root
+        group: root
+        mode: "0644"
+
+    - name: Add the NodeSource Node.js 22 repository
+      ansible.builtin.apt_repository:
+        repo: "deb [signed-by=/etc/apt/keyrings/nodesource.asc] https://deb.nodesource.com/node_22.x nodistro main"
+        filename: nodesource-node22
+        state: present
+      register: nodesource_repo
+
+    - name: Refresh apt cache after adding NodeSource
+      ansible.builtin.apt:
+        update_cache: true
+      when: nodesource_repo.changed
+
+    - name: Install Node.js 22
+      ansible.builtin.apt:
+        name: nodejs
+        state: present
+
+    - name: Ensure the deployment group exists
+      ansible.builtin.group:
+        name: "{{ deploy_group }}"
+        state: present
+
+    - name: Ensure the deployment user exists
+      ansible.builtin.user:
+        name: "{{ deploy_user }}"
+        group: "{{ deploy_group }}"
+        groups: "{{ deploy_extra_groups }}"
+        append: true
+        create_home: true
+        home: "{{ deploy_user_home }}"
+        shell: /bin/bash
+        state: present
+
+    - name: Install authorized keys for the deployment user
+      ansible.posix.authorized_key:
+        user: "{{ deploy_user }}"
+        key: "{{ item }}"
+        state: present
+      loop: "{{ deploy_authorized_keys }}"
+      when: deploy_authorized_keys | length > 0
+
+    - name: Ensure the deployment root exists
+      ansible.builtin.file:
+        path: "{{ deploy_root }}"
+        state: directory
+        owner: root
+        group: root
+        mode: "0755"
+
+    - name: Ensure the deployment path exists
+      ansible.builtin.file:
+        path: "{{ deploy_path }}"
+        state: directory
+        owner: "{{ deploy_user }}"
+        group: "{{ deploy_group }}"
+        mode: "2775"
+
+    - name: Keep the deployment user's umask group-friendly
+      ansible.builtin.blockinfile:
+        path: "{{ deploy_user_home }}/.profile"
+        create: true
+        owner: "{{ deploy_user }}"
+        group: "{{ deploy_group }}"
+        mode: "0644"
+        marker: "# {mark} ANSIBLE MANAGED DEPLOY UMASK"
+        block: |
+          umask 0002
+
+    - name: Ensure PostgreSQL is enabled and running
+      ansible.builtin.service:
+        name: postgresql
+        state: started
+        enabled: true
+
+    - name: Check whether the Node.js environment file already exists
+      ansible.builtin.stat:
+        path: "{{ node_service_env_file }}"
+      register: node_service_env_stat
+
+    - name: Read the existing Node.js environment file
+      ansible.builtin.slurp:
+        src: "{{ node_service_env_file }}"
+      register: node_service_env_content
+      when: node_service_env_stat.stat.exists
+      no_log: true
+
+    - name: Extract the existing PostgreSQL password from the server env file
+      ansible.builtin.set_fact:
+        postgres_managed_password: >-
+          {{
+            (
+              node_service_env_content.content
+              | b64decode
+              | regex_search('(?m)^POSTGRES_PASSWORD=.*$')
+              | default('')
+              | regex_replace('^POSTGRES_PASSWORD=', '')
+            )
+            | default('')
+          }}
+      when: node_service_env_stat.stat.exists
+      no_log: true
+
+    - name: Generate a PostgreSQL password on the server when missing
+      ansible.builtin.command:
+        argv:
+          - python3
+          - -c
+          - import secrets; print(secrets.token_urlsafe(32))
+      register: generated_postgres_password
+      when: (postgres_managed_password | default('')) | length == 0
+      changed_when: true
+      no_log: true
+
+    - name: Finalize the PostgreSQL password for this run
+      ansible.builtin.set_fact:
+        postgres_managed_password: >-
+          {{
+            postgres_managed_password
+            if (postgres_managed_password | default('')) | length > 0
+            else generated_postgres_password.stdout
+          }}
+      no_log: true
+
+    - name: Ensure the PostgreSQL application user exists
+      community.postgresql.postgresql_user:
+        name: "{{ postgres_app_user }}"
+        password: "{{ postgres_managed_password }}"
+        role_attr_flags: "{{ postgres_app_role_flags }}"
+        state: present
+      become: true
+      become_user: postgres
+      when:
+        - postgres_manage_app_role
+        - postgres_app_user | length > 0
+        - postgres_managed_password | length > 0
+      no_log: true
+
+    - name: Ensure the PostgreSQL application database exists
+      community.postgresql.postgresql_db:
+        name: "{{ postgres_app_db }}"
+        owner: "{{ postgres_app_user if postgres_manage_app_role else omit }}"
+        encoding: UTF8
+        state: present
+      become: true
+      become_user: postgres
+      when:
+        - postgres_manage_app_db
+        - postgres_app_db | length > 0
+
+    - name: Install the Node.js environment file
+      ansible.builtin.template:
+        src: templates/simple-language-learning.env.j2
+        dest: "{{ node_service_env_file }}"
+        owner: root
+        group: "{{ deploy_group }}"
+        mode: "0640"
+      notify: Restart node service
+      no_log: true
+
+    - name: Install the Node.js systemd service
+      ansible.builtin.template:
+        src: templates/simple-language-learning.service.j2
+        dest: "/etc/systemd/system/{{ node_service_name }}.service"
+        owner: root
+        group: root
+        mode: "0644"
+      notify: Reload systemd
+
+    - name: Allow the deploy user to restart the Node.js service
+      ansible.builtin.copy:
+        dest: "/etc/sudoers.d/{{ node_service_name }}"
+        owner: root
+        group: root
+        mode: "0440"
+        validate: /usr/sbin/visudo -cf %s
+        content: |
+          {{ deploy_user }} ALL=(root) NOPASSWD: /usr/bin/systemctl restart {{ node_service_name }}, /usr/bin/systemctl start {{ node_service_name }}, /usr/bin/systemctl stop {{ node_service_name }}, /usr/bin/systemctl status {{ node_service_name }}
+
+    - name: Check whether the Node.js app has been deployed
+      ansible.builtin.stat:
+        path: "{{ deploy_path }}/server.js"
+      register: node_app_server
+
+    # - name: Install the nginx hash configuration
+    #   ansible.builtin.template:
+    #     src: templates/nginx-hash.conf.j2
+    #     dest: /etc/nginx/conf.d/00-server-names-hash.conf
+    #     owner: root
+    #     group: root
+    #     mode: "0644"
+    #   notify: Reload nginx
+
+    - name: Install the nginx site configuration
+      ansible.builtin.template:
+        src: templates/simple-language-learning.nginx.conf.j2
+        dest: "/etc/nginx/sites-available/{{ nginx_site_name }}"
+        owner: root
+        group: root
+        mode: "0644"
+      notify: Reload nginx
+
+    - name: Enable the nginx site
+      ansible.builtin.file:
+        src: "/etc/nginx/sites-available/{{ nginx_site_name }}"
+        dest: "/etc/nginx/sites-enabled/{{ nginx_site_name }}"
+        state: link
+      notify: Reload nginx
+
+    - name: Disable the default nginx site
+      ansible.builtin.file:
+        path: /etc/nginx/sites-enabled/default
+        state: absent
+      when: disable_default_nginx_site
+      notify: Reload nginx
+
+    - name: Validate the nginx configuration
+      ansible.builtin.command: nginx -t
+      changed_when: false
+
+    - name: Ensure nginx is enabled and running
+      ansible.builtin.service:
+        name: nginx
+        state: started
+        enabled: true
+
+    - name: Ensure the Node.js service is enabled and started after the app is deployed
+      ansible.builtin.service:
+        name: "{{ node_service_name }}"
+        enabled: true
+        state: "{{ 'started' if node_app_server.stat.exists else 'stopped' }}"
+
+  handlers:
+    - name: Reload nginx
+      ansible.builtin.service:
+        name: nginx
+        state: reloaded
+
+    - name: Reload systemd
+      ansible.builtin.systemd_service:
+        daemon_reload: true
+
+    - name: Restart node service
+      ansible.builtin.service:
+        name: "{{ node_service_name }}"
+        state: restarted
+      when: node_app_server.stat.exists
