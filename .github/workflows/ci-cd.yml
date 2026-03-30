@@ -110,19 +110,19 @@ jobs:
       - name: Add server to known hosts
         run: |
           mkdir -p ~/.ssh
-          ssh-keyscan -p "${{ env.DEPLOY_PORT }}" -H "${{ env.DEPLOY_HOST }}" >> ~/.ssh/known_hosts
+          ssh-keyscan -p "${{ vars.DEPLOY_PORT }}" -H "${{ vars.DEPLOY_HOST }}" >> ~/.ssh/known_hosts
 
       - name: Sync application bundle to server
         run: |
           rsync -avz --delete \
             --no-perms \
             --chmod=Du=rwx,Dg=rwx,Do=rx,Fu=rw,Fg=rw,Fo=r \
-            -e "ssh -p ${{ env.DEPLOY_PORT }}" \
+            -e "ssh -p ${{ vars.DEPLOY_PORT }}" \
             deploy/ \
-            "${{ env.DEPLOY_USER }}@${{ env.DEPLOY_HOST }}:${{ env.DEPLOY_PATH }}/"
+            "${{ vars.DEPLOY_USER }}@${{ vars.DEPLOY_HOST }}:${{ vars.DEPLOY_PATH }}/"
 
       - name: Restart application service
         run: |
-          ssh -p "${{ env.DEPLOY_PORT }}" \
-            "${{ env.DEPLOY_USER }}@${{ env.DEPLOY_HOST }}" \
-            "sudo systemctl restart '${{ env.DEPLOY_SERVICE }}'"
+          ssh -p "${{ vars.DEPLOY_PORT }}" \
+            "${{ vars.DEPLOY_USER }}@${{ vars.DEPLOY_HOST }}" \
+            "sudo systemctl restart '${{ vars.DEPLOY_SERVICE }}'"
