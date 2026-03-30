@@ -1,0 +1,21 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: simple-language-learning-postgres
+    restart: unless-stopped
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: simple_language_learning
+      POSTGRES_PASSWORD: simple_language_learning
+      POSTGRES_DB: simple_language_learning
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U simple_language_learning -d simple_language_learning"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+volumes:
+  postgres_data:
