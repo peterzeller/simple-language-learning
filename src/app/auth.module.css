@@ -59,7 +59,8 @@
   font-weight: 600;
 }
 
-.field input {
+.field input,
+.field select {
   border: 1px solid #d8c4ad;
   border-radius: 16px;
   background: #fffdfa;
@@ -68,7 +69,8 @@
   color: #2e1c0f;
 }
 
-.field input:focus {
+.field input:focus,
+.field select:focus {
   outline: 2px solid #d58a34;
   outline-offset: 2px;
 }
@@ -90,6 +92,7 @@
   font-weight: 700;
   color: #fffaf4;
   cursor: pointer;
+  text-align: center;
 }
 
 .primaryButton:disabled {
@@ -102,13 +105,14 @@
   color: #5d4633;
 }
 
-.helperText a {
+.helperText a,
+.helperLink {
   font-weight: 700;
   color: #8a5a26;
 }
 
 .sessionCard {
-  width: min(100%, 520px);
+  width: min(100%, 720px);
   display: grid;
   gap: 20px;
   padding: 32px;
@@ -152,6 +156,141 @@
   font-weight: 700;
   color: #5d4633;
   cursor: pointer;
+  text-align: center;
+}
+
+.statsCard {
+  border: 1px solid #ead8c2;
+  border-radius: 18px;
+  padding: 16px;
+  background: #fffbf6;
+}
+
+.statsCard h2 {
+  font-size: 1rem;
+  margin-bottom: 4px;
+}
+
+.gamesList {
+  display: grid;
+  gap: 12px;
+}
+
+.gameCard {
+  border: 1px solid #ead8c2;
+  border-radius: 18px;
+  padding: 16px;
+  display: grid;
+  gap: 12px;
+}
+
+.gameCard h2 {
+  font-size: 1.2rem;
+  color: #2e1c0f;
+}
+
+.topicForm {
+  display: grid;
+  gap: 12px;
+}
+
+.trainingLayout {
+  display: grid;
+  gap: 20px;
+}
+
+.sentenceLine {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.wordCard {
+  border: 1px solid #d8c4ad;
+  border-radius: 10px;
+  background: #fffdfa;
+  padding: 8px 10px;
+  display: grid;
+  text-align: left;
+  min-width: 90px;
+  cursor: pointer;
+}
+
+.wordTranslation {
+  font-size: 0.75rem;
+  color: #8a5a26;
+}
+
+.questionBlock {
+  display: grid;
+  gap: 10px;
+  padding-top: 8px;
+}
+
+.optionsGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: 8px;
+}
+
+.optionButton {
+  border: 1px solid #d8c4ad;
+  border-radius: 10px;
+  padding: 10px;
+  background: #fff;
+  color: #2e1c0f;
+  font: inherit;
+}
+
+.optionCorrect {
+  background: #e7f8ec;
+  border-color: #47a36a;
+  animation: pulse 0.35s ease;
+}
+
+.optionWrong {
+  background: #ffeaea;
+  border-color: #cf5656;
+  animation: shake 0.35s ease;
+}
+
+.correctLabel {
+  font-weight: 800;
+}
+
+.feedbackCorrect {
+  color: #1e7a44;
+  font-weight: 700;
+}
+
+.feedbackWrong {
+  color: #b14040;
+  font-weight: 700;
+}
+
+@keyframes pulse {
+  0% {
+    transform: scale(0.98);
+  }
+
+  100% {
+    transform: scale(1);
+  }
+}
+
+@keyframes shake {
+  0%,
+  100% {
+    transform: translateX(0);
+  }
+
+  25% {
+    transform: translateX(-3px);
+  }
+
+  75% {
+    transform: translateX(3px);
+  }
 }
 
 @media (max-width: 640px) {
@@ -161,4 +300,3 @@
     border-radius: 24px;
   }
 }
-
