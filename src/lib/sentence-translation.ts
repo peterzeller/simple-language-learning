@@ -207,16 +207,50 @@ function fallbackSentence(topic: string): string {
   return "¿(Cómo|How) (estuvo|was) (tu|your) (fin|end) (de|of) (semana|week)?";
 }
 
-function getRandomQuestionIndexes(length: number): number[] {
-  const indexes = Array.from({ length }, (_, index) => index);
-  const questionCount = Math.max(1, Math.ceil(length * 0.1));
+function getQuestionIndexesByKnowledgeScore(input: {
+  tokens: Array<{ wordId: number }>;
+  scoreByWordId: Map<number, number>;
+}): number[] {
+  const questionCount = Math.max(1, Math.ceil(input.tokens.length * 0.1));
+  const chosenIndexes = new Set<number>();
 
-  for (let index = indexes.length - 1; index > 0; index -= 1) {
-    const swapIndex = Math.floor(Math.random() * (index + 1));
-    [indexes[index], indexes[swapIndex]] = [indexes[swapIndex], indexes[index]];
+  while (
+    chosenIndexes.size < questionCount
+    && chosenIndexes.size < input.tokens.length
+  ) {
+    const candidates = input.tokens
+      .map((token, index) => ({ index, token }))
+      .filter(({ index }) => !chosenIndexes.has(index));
+
+    const weights = candidates.map(({ token }) => {
+      const score = input.scoreByWordId.get(token.wordId);
+      const normalizedScore = score === undefined ? 0 : Math.max(0, Math.min(1, score));
+
+      return (1 - normalizedScore) + 0.05;
+    });
+    const totalWeight = weights.reduce((sum, weight) => sum + weight, 0);
+
+    if (totalWeight <= 0) {
+      break;
+    }
+
+    let random = Math.random() * totalWeight;
+    let selectedIndex = candidates[candidates.length - 1]?.index;
+    for (let index = 0; index < candidates.length; index += 1) {
+      random -= weights[index];
+
+      if (random <= 0) {
+        selectedIndex = candidates[index].index;
+        break;
+      }
+    }
+
+    if (selectedIndex !== undefined) {
+      chosenIndexes.add(selectedIndex);
+    }
   }
 
-  return indexes.slice(0, Math.min(questionCount, length));
+  return Array.from(chosenIndexes);
 }
 
 async function createSentenceExerciseFromRawSentence(input: {
@@ -268,7 +302,10 @@ async function createSentenceExerciseFromRawSentence(input: {
     };
   });
 
-  const questionIndexes = getRandomQuestionIndexes(tokens.length);
+  const questionIndexes = getQuestionIndexesByKnowledgeScore({
+    tokens,
+    scoreByWordId,
+  });
   for (const index of questionIndexes) {
     tokens[index].isQuestion = true;
   }
