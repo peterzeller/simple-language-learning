@@ -4,8 +4,8 @@
   place-items: center;
   padding: 32px 20px;
   background:
-    radial-gradient(circle at top, rgba(255, 210, 154, 0.45), transparent 34%),
-    linear-gradient(180deg, #fffaf0 0%, #f6efe4 100%);
+    radial-gradient(circle at top, var(--page-gradient-top), transparent 34%),
+    linear-gradient(180deg, var(--page-gradient-start) 0%, var(--page-gradient-end) 100%);
 }
 
 .card {
@@ -13,10 +13,10 @@
   display: grid;
   gap: 24px;
   padding: 32px;
-  border: 1px solid rgba(117, 76, 36, 0.12);
+  border: 1px solid var(--border-soft);
   border-radius: 28px;
-  background: rgba(255, 255, 255, 0.92);
-  box-shadow: 0 24px 60px rgba(91, 59, 28, 0.12);
+  background: var(--surface);
+  box-shadow: 0 24px 60px var(--shadow-soft);
   backdrop-filter: blur(12px);
 }
 
@@ -30,20 +30,20 @@
   font-weight: 700;
   letter-spacing: 0.18em;
   text-transform: uppercase;
-  color: #8a5a26;
+  color: var(--text-muted);
 }
 
 .copy h1 {
   font-size: clamp(2.2rem, 6vw, 3rem);
   line-height: 1;
   letter-spacing: -0.05em;
-  color: #2e1c0f;
+  color: var(--text-primary);
 }
 
 .copy p {
   font-size: 1rem;
   line-height: 1.7;
-  color: #5d4633;
+  color: var(--text-secondary);
 }
 
 .form {
@@ -54,39 +54,39 @@
 .field {
   display: grid;
   gap: 8px;
-  color: #5d4633;
+  color: var(--text-secondary);
   font-size: 0.95rem;
   font-weight: 600;
 }
 
 .field input,
 .field select {
-  border: 1px solid #d8c4ad;
+  border: 1px solid var(--border-strong);
   border-radius: 16px;
-  background: #fffdfa;
+  background: var(--surface-elevated);
   padding: 14px 16px;
   font: inherit;
-  color: #2e1c0f;
+  color: var(--text-primary);
 }
 
 .field input:focus,
 .field select:focus {
-  outline: 2px solid #d58a34;
+  outline: 2px solid var(--accent);
   outline-offset: 2px;
 }
 
 .error {
   padding: 12px 14px;
   border-radius: 14px;
-  background: #fff1ec;
-  color: #9d2f12;
+  background: var(--danger-bg);
+  color: var(--danger-text);
   font-size: 0.95rem;
 }
 
 .primaryButton {
   border: 0;
   border-radius: 16px;
-  background: linear-gradient(135deg, #8a5a26 0%, #cc7a28 100%);
+  background: linear-gradient(135deg, var(--accent-strong) 0%, var(--accent) 100%);
   padding: 14px 18px;
   font: inherit;
   font-weight: 700;
@@ -102,7 +102,7 @@
 
 .helperText {
   font-size: 0.95rem;
-  color: #5d4633;
+  color: var(--text-secondary);
 }
 
 .buttonContent {
@@ -124,7 +124,7 @@
 .helperText a,
 .helperLink {
   font-weight: 700;
-  color: #8a5a26;
+  color: var(--text-muted);
 }
 
 .sessionCard {
@@ -133,21 +133,21 @@
   gap: 20px;
   align-self: start;
   padding: 32px;
-  border: 1px solid rgba(117, 76, 36, 0.12);
+  border: 1px solid var(--border-soft);
   border-radius: 28px;
-  background: rgba(255, 255, 255, 0.92);
-  box-shadow: 0 24px 60px rgba(91, 59, 28, 0.12);
+  background: var(--surface);
+  box-shadow: 0 24px 60px var(--shadow-soft);
 }
 
 .sessionCard h1 {
   font-size: clamp(2rem, 6vw, 2.8rem);
   line-height: 1;
   letter-spacing: -0.05em;
-  color: #2e1c0f;
+  color: var(--text-primary);
 }
 
 .sessionCard p {
-  color: #5d4633;
+  color: var(--text-secondary);
   line-height: 1.7;
 }
 
@@ -155,8 +155,8 @@
   width: fit-content;
   padding: 10px 14px;
   border-radius: 999px;
-  background: #f5e4d0;
-  color: #7b4d1d;
+  background: var(--accent-soft);
+  color: var(--accent-strong);
   font-weight: 700;
 }
 
@@ -165,22 +165,22 @@
 }
 
 .secondaryButton {
-  border: 1px solid #d8c4ad;
+  border: 1px solid var(--border-strong);
   border-radius: 16px;
-  background: #fffdfa;
+  background: var(--surface-elevated);
   padding: 14px 18px;
   font: inherit;
   font-weight: 700;
-  color: #5d4633;
+  color: var(--text-secondary);
   cursor: pointer;
   text-align: center;
 }
 
 .statsCard {
-  border: 1px solid #ead8c2;
+  border: 1px solid var(--border-muted);
   border-radius: 18px;
   padding: 16px;
-  background: #fffbf6;
+  background: var(--surface-elevated);
 }
 
 .statsCard h2 {
@@ -196,25 +196,25 @@
 .statsTable {
   width: 100%;
   border-collapse: collapse;
-  border: 1px solid #ead8c2;
+  border: 1px solid var(--border-muted);
   border-radius: 14px;
   overflow: hidden;
-  background: #fffdfa;
+  background: var(--surface-elevated);
 }
 
 .statsTable th,
 .statsTable td {
   padding: 10px 12px;
-  border-bottom: 1px solid #f1e4d5;
+  border-bottom: 1px solid var(--border-muted);
   text-align: left;
-  color: #5d4633;
+  color: var(--text-secondary);
   font-size: 0.92rem;
 }
 
 .statsTable th {
   font-weight: 700;
-  color: #2e1c0f;
-  background: #fff3e4;
+  color: var(--text-primary);
+  background: var(--surface-muted);
 }
 
 .statsTable tbody tr:last-child td {
@@ -227,7 +227,7 @@
 }
 
 .gameCard {
-  border: 1px solid #ead8c2;
+  border: 1px solid var(--border-muted);
   border-radius: 18px;
   padding: 16px;
   display: grid;
@@ -236,7 +236,7 @@
 
 .gameCard h2 {
   font-size: 1.2rem;
-  color: #2e1c0f;
+  color: var(--text-primary);
 }
 
 .topicForm {
@@ -261,9 +261,9 @@
 }
 
 .wordCard {
-  border: 1px solid #fff;
+  border: 1px solid var(--surface-elevated);
   border-radius: 10px;
-  background: #fffdfa;
+  background: var(--surface-elevated);
   padding: 8px 0px;
   display: grid;
   text-align: center;
@@ -272,36 +272,36 @@
 }
 
 .wordCard:hover {
-  border: 1px solid #d8c4ad;
-  background: #fff1e0;
+  border: 1px solid var(--border-strong);
+  background: var(--surface-muted);
 }
 
 .wordCardQuestion {
-  border-color: #8fc3ff;
-  background: #eaf4ff;
-  color: #10427a;
+  border-color: var(--info-border);
+  background: var(--info-bg);
+  color: var(--info-text);
 }
 
 .wordCardQuestion:hover {
-  border-color: #6eaef4;
-  background: #dbecff;
+  border-color: var(--info-border);
+  background: var(--info-bg);
 }
 
 .wordCardCorrect {
-  border-color: #63ba83;
-  background: #e6f8ec;
-  color: #1c6f3e;
+  border-color: var(--success-border);
+  background: var(--success-bg);
+  color: var(--success-text);
 }
 
 .wordCardWrong {
-  border-color: #d87878;
-  background: #ffeaea;
-  color: #9a3232;
+  border-color: var(--danger-border);
+  background: var(--danger-bg);
+  color: var(--danger-text);
 }
 
 .wordTranslation {
   font-size: 0.6rem;
-  color: #8a5a26;
+  color: var(--text-muted);
 }
 
 .translationDialog {
@@ -309,15 +309,15 @@
   inset: 50% auto auto 50%;
   transform: translate(-50%, -50%);
   margin: 0;
-  border: 1px solid #e2d6c8;
+  border: 1px solid var(--border-muted);
   border-radius: 16px;
   padding: 16px;
   width: min(560px, calc(100vw - 32px));
-  background: #fffdfa;
+  background: var(--surface-elevated);
 }
 
 .translationDialog::backdrop {
-  background: rgba(24, 20, 16, 0.4);
+  background: rgba(24, 20, 16, 0.6);
 }
 
 .dialogHeading {
@@ -331,7 +331,7 @@
   background: transparent;
   font-size: 1.4rem;
   cursor: pointer;
-  color: #5d4633;
+  color: var(--text-secondary);
 }
 
 .questionBlock {
@@ -354,31 +354,31 @@
 
 .vocabularyPrompt h2 {
   font-size: clamp(1.8rem, 5vw, 2.4rem);
-  color: #2e1c0f;
+  color: var(--text-primary);
 }
 
 .vocabularyPrompt p {
-  color: #5d4633;
+  color: var(--text-secondary);
 }
 
 .optionButton {
-  border: 1px solid #d8c4ad;
+  border: 1px solid var(--border-strong);
   border-radius: 10px;
   padding: 10px;
-  background: #fff;
-  color: #2e1c0f;
+  background: var(--surface-elevated);
+  color: var(--text-primary);
   font: inherit;
 }
 
 .optionCorrect {
-  background: #e7f8ec;
-  border-color: #47a36a;
+  background: var(--success-bg);
+  border-color: var(--success-border);
   animation: pulse 0.35s ease;
 }
 
 .optionWrong {
-  background: #ffeaea;
-  border-color: #cf5656;
+  background: var(--danger-bg);
+  border-color: var(--danger-border);
   animation: shake 0.35s ease;
 }
 
@@ -387,12 +387,12 @@
 }
 
 .feedbackCorrect {
-  color: #1e7a44;
+  color: var(--success-text);
   font-weight: 700;
 }
 
 .feedbackWrong {
-  color: #b14040;
+  color: var(--danger-text);
   font-weight: 700;
 }
 
@@ -448,16 +448,16 @@
   gap: 10px;
   justify-content: space-between;
   align-items: center;
-  border: 1px solid #f1e4d5;
+  border: 1px solid var(--border-muted);
   border-radius: 12px;
-  background: #fffdfa;
+  background: var(--surface-elevated);
   padding: 10px 12px;
 }
 
 .dangerButton {
   border: 0;
   border-radius: 16px;
-  background: linear-gradient(135deg, #9d2f12 0%, #c3442b 100%);
+  background: linear-gradient(135deg, #8a2f2f 0%, #c3442b 100%);
   padding: 14px 18px;
   font: inherit;
   font-weight: 700;
