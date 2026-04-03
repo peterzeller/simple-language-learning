@@ -27,7 +27,7 @@ export interface UserWordKnowledge {
 }
 
 function normalizeWord(word: string): string {
-  return word.trim().toLowerCase();
+  return word.trim().replaceAll(/\p{P}+/gu, "").trim().toLowerCase();
 }
 
 async function getOrCreateWord(language: string, word: string): Promise<number> {
