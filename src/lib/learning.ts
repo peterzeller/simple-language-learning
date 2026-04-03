@@ -78,22 +78,19 @@ export async function storeTranslationPairs(
 
     sourceWordToId.set(normalizeWord(pair.sourceWord), sourceId);
 
-    const existingLink = await db
-      .selectFrom("word_links")
-      .select("from_id")
-      .where("from_id", "=", sourceId)
-      .where("to_id", "=", targetId)
-      .executeTakeFirst();
-
-    if (!existingLink) {
-      await db
-        .insertInto("word_links")
-        .values({
-          from_id: sourceId,
-          to_id: targetId,
-        })
-        .execute();
-    }
+    await db
+      .insertInto("word_links")
+      .values({
+        from_id: sourceId,
+        to_id: targetId,
+        count: 1,
+      })
+      .onConflict((builder) =>
+        builder.columns(["from_id", "to_id"]).doUpdateSet((expressionBuilder) => ({
+          count: sql`${expressionBuilder.ref("word_links.count")} + 1`,
+        })),
+      )
+      .execute();
   }
 
   return sourceWordToId;
@@ -253,6 +250,7 @@ export async function getVocabularyQuestionForUser(
       "source_words.id as wordId",
       "source_words.word as sourceWord",
       "target_words.word as targetWord",
+      "word_links.count as translationCount",
     ])
     .where("source_words.language", "=", "es")
     .where("target_words.language", "=", "en")
@@ -262,7 +260,26 @@ export async function getVocabularyQuestionForUser(
     return null;
   }
 
-  const uniqueOptionsPool = Array.from(new Set(candidateRows.map((row) => row.targetWord)));
+  const candidateByWordId = new Map<
+    number,
+    { wordId: number; sourceWord: string; targetWord: string; translationCount: number }
+  >();
+
+  for (const row of candidateRows) {
+    const existing = candidateByWordId.get(row.wordId);
+
+    if (
+      !existing
+      || row.translationCount > existing.translationCount
+      || (row.translationCount === existing.translationCount && Math.random() < 0.5)
+    ) {
+      candidateByWordId.set(row.wordId, row);
+    }
+  }
+
+  const rankedCandidates = Array.from(candidateByWordId.values());
+
+  const uniqueOptionsPool = Array.from(new Set(rankedCandidates.map((row) => row.targetWord)));
 
   if (uniqueOptionsPool.length < 4) {
     return null;
@@ -294,8 +311,8 @@ export async function getVocabularyQuestionForUser(
 
   const shouldPickRandom = Math.random() < 0.1;
   const chosenCandidate = shouldPickRandom
-    ? candidateRows[Math.floor(Math.random() * candidateRows.length)]
-    : [...candidateRows].sort((first, second) => {
+    ? rankedCandidates[Math.floor(Math.random() * rankedCandidates.length)]
+    : [...rankedCandidates].sort((first, second) => {
         const firstScore = scoreByWordId.get(first.wordId) ?? 0;
         const secondScore = scoreByWordId.get(second.wordId) ?? 0;
 

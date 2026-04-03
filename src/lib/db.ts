@@ -24,6 +24,7 @@ interface WordsTable {
 interface WordLinksTable {
   from_id: number;
   to_id: number;
+  count: number;
 }
 
 interface UserLearningTable {
@@ -137,8 +138,14 @@ export async function ensureLearningTables(): Promise<void> {
       .addColumn("to_id", "integer", (column) =>
         column.references("words.id").onDelete("cascade").notNull(),
       )
+      .addColumn("count", "integer", (column) => column.notNull().defaultTo(1))
       .addPrimaryKeyConstraint("word_links_pkey", ["from_id", "to_id"])
       .execute();
+
+    await sql`
+      ALTER TABLE word_links
+      ADD COLUMN IF NOT EXISTS count integer NOT NULL DEFAULT 1
+    `.execute(db);
 
     await db.schema
       .createTable("user_learning")
