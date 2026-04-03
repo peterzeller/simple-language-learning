@@ -105,6 +105,22 @@
   color: #5d4633;
 }
 
+.buttonContent {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+.inlineSpinner {
+  width: 14px;
+  height: 14px;
+  border: 2px solid rgba(255, 250, 244, 0.4);
+  border-top-color: #fffaf4;
+  border-radius: 999px;
+  animation: spin 0.7s linear infinite;
+}
+
 .helperText a,
 .helperLink {
   font-weight: 700;
@@ -225,6 +241,11 @@
 .topicForm {
   display: grid;
   gap: 12px;
+}
+
+.topicActions {
+  display: grid;
+  gap: 10px;
 }
 
 .trainingLayout {
@@ -366,6 +387,12 @@
 
   100% {
     transform: scale(1);
+  }
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
   }
 }
 
