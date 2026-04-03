@@ -4,6 +4,7 @@ import { useState, useTransition } from "react";
 
 import styles from "@/app/auth.module.css";
 import {
+  continueSentenceStory,
   createSentenceFromPrompt,
   createSentenceFromRandom,
 } from "@/app/sentence-translation/actions";
@@ -30,6 +31,19 @@ export function SentenceTranslationWorkspace({
         mode === "prompt"
           ? await createSentenceFromPrompt({ topic: normalizedTopic })
           : await createSentenceFromRandom({ topic: normalizedTopic });
+      setExercise(nextExercise);
+    });
+  };
+
+  const continueStory = () => {
+    const storyId = exercise.story.storyId;
+
+    if (!storyId) {
+      return;
+    }
+
+    startTransition(async () => {
+      const nextExercise = await continueSentenceStory({ storyId });
       setExercise(nextExercise);
     });
   };
@@ -71,8 +85,23 @@ export function SentenceTranslationWorkspace({
         </div>
       </div>
 
+      {exercise.originalSentence && (
+        <p className={styles.helperText}>Original sentence: {exercise.originalSentence}</p>
+      )}
+
       {isPending && <p className={styles.helperText}>Loading sentence...</p>}
       {!isPending && exercise && <SentenceTraining exercise={exercise} />}
+
+      <div className={styles.topicActions}>
+        <button
+          className={styles.primaryButton}
+          disabled={isPending || !exercise.story.storyId}
+          onClick={continueStory}
+          type="button"
+        >
+          Continue story
+        </button>
+      </div>
     </>
   );
 }

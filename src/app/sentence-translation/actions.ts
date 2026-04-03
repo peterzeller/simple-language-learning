@@ -4,6 +4,7 @@ import { getCurrentUser } from "@/lib/auth";
 import { recordLearningEvent } from "@/lib/learning";
 import {
   type SentenceExercise,
+  continueStoryExercise,
   createSentenceExerciseFromPrompt,
   createSentenceExerciseFromRandomSentence,
 } from "@/lib/sentence-translation";
@@ -70,5 +71,20 @@ export async function recordSentenceReveal(input: { wordId: number }): Promise<v
     userId: user.id,
     wordId: input.wordId,
     isCorrect: false,
+  });
+}
+
+export async function continueSentenceStory(input: {
+  storyId: number;
+}): Promise<SentenceExercise> {
+  const user = await getCurrentUser();
+
+  if (!user) {
+    throw new Error("Unauthorized");
+  }
+
+  return continueStoryExercise({
+    storyId: input.storyId,
+    userId: user.id,
   });
 }

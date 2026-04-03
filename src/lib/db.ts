@@ -34,10 +34,20 @@ interface UserLearningTable {
   is_correct: boolean;
 }
 
+interface StoriesTable {
+  id: Generated<number>;
+  topic: string;
+  outline: string;
+  created_at: Generated<TimestampColumn>;
+}
+
 interface SentenceTranslationsTable {
   id: Generated<number>;
   topic: string;
   raw_sentence: string;
+  original_sentence: string | null;
+  story_id: number | null;
+  story_index: number | null;
   created_at: Generated<TimestampColumn>;
 }
 
@@ -46,6 +56,7 @@ interface Database {
   words: WordsTable;
   word_links: WordLinksTable;
   user_learning: UserLearningTable;
+  stories: StoriesTable;
   sentence_translations: SentenceTranslationsTable;
 }
 
@@ -158,6 +169,20 @@ export async function ensureLearningTables(): Promise<void> {
       .addColumn("is_correct", "boolean", (column) => column.notNull())
       .execute();
 
+
+    await db.schema
+      .createTable("stories")
+      .ifNotExists()
+      .addColumn("id", "integer", (column) =>
+        column.generatedAlwaysAsIdentity().primaryKey(),
+      )
+      .addColumn("topic", "text", (column) => column.notNull())
+      .addColumn("outline", "text", (column) => column.notNull())
+      .addColumn("created_at", "timestamptz", (column) =>
+        column.notNull().defaultTo(sql`CURRENT_TIMESTAMP`),
+      )
+      .execute();
+
     await db.schema
       .createTable("sentence_translations")
       .ifNotExists()
@@ -166,11 +191,22 @@ export async function ensureLearningTables(): Promise<void> {
       )
       .addColumn("topic", "text", (column) => column.notNull())
       .addColumn("raw_sentence", "text", (column) => column.notNull())
+      .addColumn("original_sentence", "text")
+      .addColumn("story_id", "integer", (column) =>
+        column.references("stories.id").onDelete("set null"),
+      )
+      .addColumn("story_index", "integer")
       .addColumn("created_at", "timestamptz", (column) =>
         column.notNull().defaultTo(sql`CURRENT_TIMESTAMP`),
       )
       .execute();
+
+
+    await sql`ALTER TABLE sentence_translations ADD COLUMN IF NOT EXISTS original_sentence text`.execute(db);
+    await sql`ALTER TABLE sentence_translations ADD COLUMN IF NOT EXISTS story_id integer REFERENCES stories(id) ON DELETE SET NULL`.execute(db);
+    await sql`ALTER TABLE sentence_translations ADD COLUMN IF NOT EXISTS story_index integer`.execute(db);
   })();
+
 
   await globalThis.__simpleLanguageLearningLearningInit;
 }
