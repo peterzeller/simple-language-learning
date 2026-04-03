@@ -24,6 +24,9 @@ export default async function Home() {
             <p>
               Words you know: <strong>{knownWords}</strong>
             </p>
+            <Link className={styles.helperLink} href="/stats">
+              View detailed stats →
+            </Link>
           </div>
 
           <div className={styles.gamesList}>

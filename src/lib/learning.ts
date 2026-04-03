@@ -1,12 +1,29 @@
 import "server-only";
 
+import { sql } from "kysely";
+
 import { ensureLearningTables, getDb } from "@/lib/db";
+
+const LEARNING_HALF_LIFE_DAYS = 14;
+const PERFECT_SCORE_DECAY_DAYS = 21;
 
 interface TranslationPair {
   sourceWord: string;
   targetWord: string;
   sourceLanguage: string;
   targetLanguage: string;
+}
+
+export interface UserWordKnowledge {
+  wordId: number;
+  language: string;
+  word: string;
+  attempts: number;
+  correctAttempts: number;
+  incorrectAttempts: number;
+  lastAttemptedAt: Date;
+  lastCorrectAt: Date | null;
+  knowledgeScore: number;
 }
 
 function normalizeWord(word: string): string {
@@ -121,9 +138,100 @@ export async function recordLearningEvent(input: {
 }
 
 export async function getKnownWordsCount(userId: number): Promise<number> {
-  const knownWordIds = await getKnownWordIdsForUser(userId);
+  await ensureLearningTables();
+  const db = getDb();
 
-  return knownWordIds.size;
+  const result = await db
+    .selectFrom("user_learning")
+    .select((expressionBuilder) => [
+      expressionBuilder.fn.count<number>("word_id").distinct().as("count"),
+    ])
+    .where("user_id", "=", userId)
+    .where("is_correct", "=", true)
+    .executeTakeFirst();
+
+  return result?.count ?? 0;
+}
+
+export async function getUserWordKnowledgeTable(userId: number): Promise<UserWordKnowledge[]> {
+  await ensureLearningTables();
+  const db = getDb();
+
+  const scoredRows = await db
+    .selectFrom("user_learning")
+    .innerJoin("words", "words.id", "user_learning.word_id")
+    .select((expressionBuilder) => [
+      "user_learning.word_id as wordId",
+      "words.language as language",
+      "words.word as word",
+      expressionBuilder.fn.count<number>("user_learning.id").as("attempts"),
+      expressionBuilder.fn
+        .count<number>("user_learning.id")
+        .filterWhere("user_learning.is_correct", "=", true)
+        .as("correctAttempts"),
+      expressionBuilder.fn
+        .count<number>("user_learning.id")
+        .filterWhere("user_learning.is_correct", "=", false)
+        .as("incorrectAttempts"),
+      expressionBuilder.fn.max<Date>("user_learning.attempted_at").as("lastAttemptedAt"),
+      expressionBuilder.fn
+        .max<Date>(
+          expressionBuilder
+            .case()
+            .when("user_learning.is_correct", "=", true)
+            .then(expressionBuilder.ref("user_learning.attempted_at"))
+            .else(null)
+            .end(),
+        )
+        .as("lastCorrectAt"),
+      sql<number>`COALESCE(
+        SUM(
+          (
+            CASE WHEN ${expressionBuilder.ref("user_learning.is_correct")} THEN 1.0 ELSE -0.7 END
+          ) * EXP(
+            -EXTRACT(EPOCH FROM (
+              CURRENT_TIMESTAMP - ${expressionBuilder.ref("user_learning.attempted_at")}
+            )) / ${LEARNING_HALF_LIFE_DAYS * 24 * 60 * 60}
+          )
+        ),
+        0
+      )`.as("knowledgeScoreRaw"),
+    ])
+    .where("user_learning.user_id", "=", userId)
+    .groupBy(["user_learning.word_id", "words.language", "words.word"])
+    .execute();
+
+  return scoredRows
+    .map((row) => {
+      const daysSinceLastCorrect =
+        row.lastCorrectAt === null
+          ? Number.POSITIVE_INFINITY
+          : (Date.now() - row.lastCorrectAt.getTime()) / (1000 * 60 * 60 * 24);
+      const freshnessMultiplier =
+        row.lastCorrectAt === null
+          ? 0
+          : Math.exp(-daysSinceLastCorrect / PERFECT_SCORE_DECAY_DAYS);
+      const weightedAndDecayedScore = Math.max(
+        0,
+        Math.min(1, row.knowledgeScoreRaw),
+      );
+      const knowledgeScore = Math.max(
+        0,
+        Math.min(1, weightedAndDecayedScore * freshnessMultiplier),
+      );
+
+      return {
+        ...row,
+        knowledgeScore,
+      };
+    })
+    .sort((first, second) => {
+      if (second.knowledgeScore !== first.knowledgeScore) {
+        return second.knowledgeScore - first.knowledgeScore;
+      }
+
+      return second.lastAttemptedAt.getTime() - first.lastAttemptedAt.getTime();
+    });
 }
 
 export { normalizeWord };
