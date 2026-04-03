@@ -128,11 +128,6 @@ export async function ensureLearningTables(): Promise<void> {
       .addUniqueConstraint("words_language_word_key", ["language", "word"])
       .execute();
 
-    await sql`
-      UPDATE words
-      SET word = lower(trim(regexp_replace(word, '[[:punct:]]+', '', 'g')));
-    `.execute(db);
-
     await db.schema
       .createTable("word_links")
       .ifNotExists()
@@ -144,47 +139,6 @@ export async function ensureLearningTables(): Promise<void> {
       )
       .addPrimaryKeyConstraint("word_links_pkey", ["from_id", "to_id"])
       .execute();
-
-    await sql`
-      DROP TABLE IF EXISTS word_links_migrated;
-
-      CREATE TEMP TABLE word_links_migrated AS
-      WITH normalized_words AS (
-        SELECT
-          id,
-          language,
-          lower(trim(regexp_replace(word, '[[:punct:]]+', '', 'g'))) AS normalized_word
-        FROM words
-      ),
-      canonical_words AS (
-        SELECT
-          language,
-          normalized_word,
-          MIN(id) AS keep_id
-        FROM normalized_words
-        GROUP BY language, normalized_word
-      )
-      SELECT DISTINCT
-        from_canonical.keep_id AS from_id,
-        to_canonical.keep_id AS to_id
-      FROM word_links AS links
-      JOIN normalized_words AS from_words ON from_words.id = links.from_id
-      JOIN normalized_words AS to_words ON to_words.id = links.to_id
-      JOIN canonical_words AS from_canonical
-        ON from_canonical.language = from_words.language
-        AND from_canonical.normalized_word = from_words.normalized_word
-      JOIN canonical_words AS to_canonical
-        ON to_canonical.language = to_words.language
-        AND to_canonical.normalized_word = to_words.normalized_word;
-
-      TRUNCATE TABLE word_links;
-
-      INSERT INTO word_links (from_id, to_id)
-      SELECT from_id, to_id
-      FROM word_links_migrated;
-
-      DROP TABLE word_links_migrated;
-    `.execute(db);
 
     await db.schema
       .createTable("user_learning")
@@ -203,80 +157,6 @@ export async function ensureLearningTables(): Promise<void> {
       )
       .addColumn("is_correct", "boolean", (column) => column.notNull())
       .execute();
-
-    await sql`
-      WITH normalized_words AS (
-        SELECT
-          id,
-          language,
-          lower(trim(regexp_replace(word, '[[:punct:]]+', '', 'g'))) AS normalized_word
-        FROM words
-      ),
-      canonical_words AS (
-        SELECT
-          language,
-          normalized_word,
-          MIN(id) AS keep_id
-        FROM normalized_words
-        GROUP BY language, normalized_word
-      ),
-      words_dedup_map AS (
-        SELECT normalized_words.id AS duplicate_id, canonical_words.keep_id
-        FROM normalized_words
-        JOIN canonical_words
-          ON canonical_words.language = normalized_words.language
-          AND canonical_words.normalized_word = normalized_words.normalized_word
-        WHERE normalized_words.id <> canonical_words.keep_id
-      )
-      UPDATE user_learning
-      SET word_id = words_dedup_map.keep_id
-      FROM words_dedup_map
-      WHERE user_learning.word_id = words_dedup_map.duplicate_id;
-    `.execute(db);
-
-    await sql`
-      WITH normalized_words AS (
-        SELECT
-          id,
-          language,
-          lower(trim(regexp_replace(word, '[[:punct:]]+', '', 'g'))) AS normalized_word
-        FROM words
-      ),
-      canonical_words AS (
-        SELECT
-          language,
-          normalized_word,
-          MIN(id) AS keep_id
-        FROM normalized_words
-        GROUP BY language, normalized_word
-      ),
-      words_dedup_map AS (
-        SELECT normalized_words.id AS duplicate_id
-        FROM normalized_words
-        JOIN canonical_words
-          ON canonical_words.language = normalized_words.language
-          AND canonical_words.normalized_word = normalized_words.normalized_word
-        WHERE normalized_words.id <> canonical_words.keep_id
-      )
-      DELETE FROM words
-      USING words_dedup_map
-      WHERE words.id = words_dedup_map.duplicate_id;
-    `.execute(db);
-
-    await sql`
-      DO $$
-      BEGIN
-        IF NOT EXISTS (
-          SELECT 1
-          FROM pg_constraint
-          WHERE conname = 'words_language_word_key'
-        ) THEN
-          ALTER TABLE words
-          ADD CONSTRAINT words_language_word_key UNIQUE (language, word);
-        END IF;
-      END
-      $$;
-    `.execute(db);
 
     await db.schema
       .createTable("sentence_translations")
