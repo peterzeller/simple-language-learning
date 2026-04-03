@@ -160,7 +160,7 @@ async function generateFromOpenAI(topic: string): Promise<string | null> {
       return null;
     }
 
-    const translationRequestPrompt = `Transform the following Spanish text into bilingual token format where each Spanish token is paired with a natural English translation like (hola|hello). Preserve punctuation and order. Return JSON only with key "sentence". Spanish text: "${spanishText}"`;
+    const translationRequestPrompt = `Transform the following Spanish text into bilingual token format where every Spanish token is paired with an honest, literal English translation in the form (spanish|english). Do not merge tokens or smooth grammar for natural English. Keep token order and punctuation exactly as in Spanish, and if the literal English sounds unnatural, keep it anyway. Example: "me contaron" -> "(me|me) (contaron|they told)". Return JSON only with key "sentence". Spanish text: "${spanishText}"`;
     const secondResponse = await requestOpenAIJson<{ sentence: string }>({
       prompt: translationRequestPrompt,
       schemaName: "bilingual_sentence_response",
