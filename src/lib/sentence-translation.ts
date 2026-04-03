@@ -79,7 +79,11 @@ async function generateFromOpenAI(topic: string): Promise<string | null> {
     );
   const firstPrompt = `You are helping Spanish learners. Write an interesting Spanish text based on this prompt: "${selectedPrompt}". Return JSON only with key "spanishText".`;
 
-  async function requestOpenAIJson<T>(inputPrompt: string): Promise<T | null> {
+  async function requestOpenAIJson<T>(input: {
+    prompt: string;
+    schemaName: string;
+    schema: Record<string, unknown>;
+  }): Promise<T | null> {
     const response = await fetch("https://api.openai.com/v1/responses", {
       method: "POST",
       headers: {
@@ -88,7 +92,15 @@ async function generateFromOpenAI(topic: string): Promise<string | null> {
       },
       body: JSON.stringify({
         model: "gpt-4.1-mini",
-        input: inputPrompt,
+        input: input.prompt,
+        text: {
+          format: {
+            type: "json_schema",
+            name: input.schemaName,
+            schema: input.schema,
+            strict: true,
+          },
+        },
       }),
       cache: "no-store",
     });
@@ -124,7 +136,18 @@ async function generateFromOpenAI(topic: string): Promise<string | null> {
   }
 
   try {
-    const firstResponse = await requestOpenAIJson<{ spanishText: string }>(firstPrompt);
+    const firstResponse = await requestOpenAIJson<{ spanishText: string }>({
+      prompt: firstPrompt,
+      schemaName: "spanish_text_response",
+      schema: {
+        type: "object",
+        properties: {
+          spanishText: { type: "string" },
+        },
+        required: ["spanishText"],
+        additionalProperties: false,
+      },
+    });
     const spanishText = firstResponse?.spanishText?.trim();
 
     if (!spanishText) {
@@ -133,7 +156,18 @@ async function generateFromOpenAI(topic: string): Promise<string | null> {
     }
 
     const translationRequestPrompt = `Transform the following Spanish text into bilingual token format where each Spanish token is paired with a natural English translation like (hola|hello). Preserve punctuation and order. Return JSON only with key "sentence". Spanish text: "${spanishText}"`;
-    const secondResponse = await requestOpenAIJson<{ sentence: string }>(translationRequestPrompt);
+    const secondResponse = await requestOpenAIJson<{ sentence: string }>({
+      prompt: translationRequestPrompt,
+      schemaName: "bilingual_sentence_response",
+      schema: {
+        type: "object",
+        properties: {
+          sentence: { type: "string" },
+        },
+        required: ["sentence"],
+        additionalProperties: false,
+      },
+    });
 
     if (!secondResponse?.sentence?.trim()) {
       console.warn("OpenAI translation step failed, falling back to default sentence.");
