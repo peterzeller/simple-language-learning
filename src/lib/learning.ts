@@ -14,6 +14,13 @@ interface TranslationPair {
   targetLanguage: string;
 }
 
+export interface VocabularyQuestion {
+  wordId: number;
+  sourceWord: string;
+  correctTranslation: string;
+  options: string[];
+}
+
 export interface UserWordKnowledge {
   wordId: number;
   language: string;
@@ -232,6 +239,98 @@ export async function getUserWordKnowledgeTable(userId: number): Promise<UserWor
 
       return second.lastAttemptedAt.getTime() - first.lastAttemptedAt.getTime();
     });
+}
+
+function shuffle<T>(values: T[]): T[] {
+  const clone = [...values];
+
+  for (let index = clone.length - 1; index > 0; index -= 1) {
+    const swapIndex = Math.floor(Math.random() * (index + 1));
+    [clone[index], clone[swapIndex]] = [clone[swapIndex], clone[index]];
+  }
+
+  return clone;
+}
+
+export async function getVocabularyQuestionForUser(
+  userId: number,
+): Promise<VocabularyQuestion | null> {
+  await ensureLearningTables();
+  const db = getDb();
+
+  const candidateRows = await db
+    .selectFrom("word_links")
+    .innerJoin("words as source_words", "source_words.id", "word_links.from_id")
+    .innerJoin("words as target_words", "target_words.id", "word_links.to_id")
+    .select([
+      "source_words.id as wordId",
+      "source_words.word as sourceWord",
+      "target_words.word as targetWord",
+    ])
+    .where("source_words.language", "=", "es")
+    .where("target_words.language", "=", "en")
+    .execute();
+
+  if (candidateRows.length === 0) {
+    return null;
+  }
+
+  const uniqueOptionsPool = Array.from(new Set(candidateRows.map((row) => row.targetWord)));
+
+  if (uniqueOptionsPool.length < 4) {
+    return null;
+  }
+
+  const scoreRows = await db
+    .selectFrom("user_learning")
+    .select((expressionBuilder) => [
+      "word_id as wordId",
+      expressionBuilder.fn
+        .avg<number>(
+          expressionBuilder
+            .case()
+            .when("is_correct", "=", true)
+            .then(1)
+            .else(0)
+            .end(),
+        )
+        .as("accuracy"),
+    ])
+    .where("user_id", "=", userId)
+    .groupBy("word_id")
+    .execute();
+
+  const scoreByWordId = new Map<number, number>();
+  for (const row of scoreRows) {
+    scoreByWordId.set(row.wordId, Number(row.accuracy ?? 0));
+  }
+
+  const shouldPickRandom = Math.random() < 0.1;
+  const chosenCandidate = shouldPickRandom
+    ? candidateRows[Math.floor(Math.random() * candidateRows.length)]
+    : [...candidateRows].sort((first, second) => {
+        const firstScore = scoreByWordId.get(first.wordId) ?? 0;
+        const secondScore = scoreByWordId.get(second.wordId) ?? 0;
+
+        if (firstScore !== secondScore) {
+          return firstScore - secondScore;
+        }
+
+        return Math.random() - 0.5;
+      })[0];
+
+  const wrongOptions = shuffle(
+    uniqueOptionsPool.filter((option) => option !== chosenCandidate.targetWord),
+  ).slice(0, 3);
+
+  const options = shuffle([chosenCandidate.targetWord, ...wrongOptions]);
+
+  return {
+    wordId: chosenCandidate.wordId,
+    sourceWord: chosenCandidate.sourceWord,
+    correctTranslation: chosenCandidate.targetWord,
+    options,
+  };
 }
 
 export { normalizeWord };
