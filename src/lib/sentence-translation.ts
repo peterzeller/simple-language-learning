@@ -21,22 +21,58 @@ export interface SentenceExercise {
   questions: SentenceQuestion[];
 }
 
+// parses a sentence that is expected to have format
+// "(source|target) (source|target) ...", for example:
+// "or source(target), and it returns an array of { source, target } pairs."
 function parseBilingualSentence(sentence: string): Array<{ source: string; target: string }> {
-  const matches = sentence.matchAll(/\(([^|)]+)\|([^\)]+)\)/g);
-  const pairs: Array<{ source: string; target: string }> = [];
+  let inParentheses = false;
+  let afterBar = false;
+  let currentBeforeParentheses = "";
+  let currentSource = "";
+  let currentTarget = "";
+  let result: Array<{ source: string; target: string }> = [];
 
-  for (const match of matches) {
-    const source = match[1]?.trim();
-    const target = match[2]?.trim();
 
-    if (!source || !target) {
-      continue;
+
+
+  for (const char of sentence) {
+    if (char === "(") {
+      inParentheses = true;
+      currentSource = "";
+      currentTarget = "";
+    } else if (char === ")") {
+      if (inParentheses) {
+        if (currentTarget) {
+          result.push({ source: currentBeforeParentheses + currentSource, target: currentTarget.trim() });
+        } else {
+          // only one part in parentheses, treat it as the translation of the previous word
+          result.push({ source: currentBeforeParentheses, target: currentSource });
+        }
+        inParentheses = false;
+        currentBeforeParentheses = "";
+        currentSource = "";
+        currentTarget = "";
+      } else {
+        currentBeforeParentheses += char;
+      }
+    } else if (inParentheses) {
+      if (char === "|") {
+        afterBar = true;
+        continue;
+      }
+      if (afterBar) {
+        currentTarget += char;
+      } else {
+        currentSource += char;
+      }
+    } else {
+      currentBeforeParentheses += char;
     }
-
-    pairs.push({ source, target });
   }
-
-  return pairs;
+  if (currentBeforeParentheses) {
+    result.push({ source: currentBeforeParentheses, target: "" });
+  }
+  return result;
 }
 
 async function generateFromOpenAI(topic: string): Promise<string | null> {
