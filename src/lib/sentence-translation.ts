@@ -2,7 +2,11 @@ import "server-only";
 
 import { sql } from "kysely";
 import { ensureLearningTables, getDb } from "@/lib/db";
-import { getKnownWordIdsForUser, normalizeWord, storeTranslationPairs } from "@/lib/learning";
+import {
+  getUserWordKnowledgeTable,
+  normalizeWord,
+  storeTranslationPairs,
+} from "@/lib/learning";
 import { parseBilingualSentence } from "@/lib/parse-bilingual-sentence";
 
 export interface SentenceToken {
@@ -10,6 +14,7 @@ export interface SentenceToken {
   target: string;
   wordId: number;
   isKnown: boolean;
+  revealByDefault: boolean;
   isQuestion: boolean;
 }
 
@@ -165,7 +170,15 @@ async function createSentenceExerciseFromRawSentence(input: {
     })),
   );
 
-  const knownWordIds = await getKnownWordIdsForUser(input.userId);
+  const wordKnowledgeTable = await getUserWordKnowledgeTable(input.userId);
+  const knownWordIds = new Set(
+    wordKnowledgeTable
+      .filter((row) => row.knowledgeScore > 0)
+      .map((row) => row.wordId),
+  );
+  const scoreByWordId = new Map(
+    wordKnowledgeTable.map((row) => [row.wordId, row.knowledgeScore]),
+  );
   const tokens: SentenceToken[] = pairs.map((pair) => {
     const wordId = wordIdMap.get(normalizeWord(pair.source));
 
@@ -173,11 +186,14 @@ async function createSentenceExerciseFromRawSentence(input: {
       throw new Error("Missing word id for generated sentence token.");
     }
 
+    const score = scoreByWordId.get(wordId);
+
     return {
       source: pair.source,
       target: pair.target,
       wordId,
       isKnown: knownWordIds.has(wordId),
+      revealByDefault: score === undefined || score === 0,
       isQuestion: false,
     };
   });

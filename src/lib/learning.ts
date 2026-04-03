@@ -100,25 +100,12 @@ export async function storeTranslationPairs(
 }
 
 export async function getKnownWordIdsForUser(userId: number): Promise<Set<number>> {
-  await ensureLearningTables();
-  const db = getDb();
-
-  const rows = await db
-    .selectFrom("user_learning")
-    .select((expressionBuilder) => [
-      "word_id",
-      expressionBuilder.fn.count<number>("id").filterWhere("is_correct", "=", true).as("correct_count"),
-      expressionBuilder.fn.count<number>("id").filterWhere("is_correct", "=", false).as("incorrect_count"),
-    ])
-    .where("user_id", "=", userId)
-    .groupBy("word_id")
-    .execute();
-
   const knownWordIds = new Set<number>();
+  const wordKnowledge = await getUserWordKnowledgeTable(userId);
 
-  for (const row of rows) {
-    if (row.correct_count - row.incorrect_count >= 3) {
-      knownWordIds.add(row.word_id);
+  for (const row of wordKnowledge) {
+    if (row.knowledgeScore > 0) {
+      knownWordIds.add(row.wordId);
     }
   }
 

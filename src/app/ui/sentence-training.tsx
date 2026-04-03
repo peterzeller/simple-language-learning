@@ -37,7 +37,7 @@ export function SentenceTraining({ exercise }: SentenceTrainingProps) {
         {exercise.tokens.map((token, index) => {
           const question = questionByIndex.get(index);
           const answer = answers[index];
-          const shouldReveal = !token.isQuestion && (!token.isKnown || revealedWords[index]);
+          const shouldReveal = !token.isQuestion && (token.revealByDefault || revealedWords[index]);
 
           const cardClassName = [styles.wordCard];
 
@@ -63,19 +63,18 @@ export function SentenceTraining({ exercise }: SentenceTrainingProps) {
                   return;
                 }
 
-                if (token.isKnown) {
-                  let shouldRecordReveal = false;
-                  setRevealedWords((prev) => {
-                    const nextIsRevealed = !prev[index];
-                    shouldRecordReveal = nextIsRevealed;
-                    return { ...prev, [index]: nextIsRevealed };
-                  });
+                let shouldRecordReveal = false;
+                setRevealedWords((prev) => {
+                  const currentlyVisible = token.revealByDefault || Boolean(prev[index]);
+                  const nextIsVisible = !currentlyVisible;
+                  shouldRecordReveal = !currentlyVisible && nextIsVisible;
+                  return { ...prev, [index]: nextIsVisible };
+                });
 
-                  if (shouldRecordReveal) {
-                    startTransition(async () => {
-                      await recordSentenceReveal({ wordId: token.wordId });
-                    });
-                  }
+                if (shouldRecordReveal) {
+                  startTransition(async () => {
+                    await recordSentenceReveal({ wordId: token.wordId });
+                  });
                 }
               }}
               type="button"
