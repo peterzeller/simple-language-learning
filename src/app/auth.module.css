@@ -210,6 +210,11 @@
   gap: 12px;
 }
 
+.topicActions {
+  display: grid;
+  gap: 10px;
+}
+
 .trainingLayout {
   display: grid;
   gap: 20px;

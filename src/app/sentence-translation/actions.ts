@@ -1,28 +1,45 @@
 "use server";
 
-import { redirect } from "next/navigation";
-
 import { getCurrentUser } from "@/lib/auth";
 import { recordLearningEvent } from "@/lib/learning";
-import { createSentenceExerciseFromPrompt } from "@/lib/sentence-translation";
+import {
+  type SentenceExercise,
+  createSentenceExerciseFromPrompt,
+  createSentenceExerciseFromRandomSentence,
+} from "@/lib/sentence-translation";
 
-export async function createSentenceFromPrompt(formData: FormData): Promise<void> {
+function normalizeTopic(value: string): string {
+  return value.trim() || "Random story";
+}
+
+export async function createSentenceFromPrompt(input: {
+  topic: string;
+}): Promise<SentenceExercise> {
   const user = await getCurrentUser();
 
   if (!user) {
-    redirect("/");
+    throw new Error("Unauthorized");
   }
 
-  const rawTopic = String(formData.get("topic") ?? "").trim();
-  const topic = rawTopic || "Random story";
-
-  await createSentenceExerciseFromPrompt({
-    topic,
+  return createSentenceExerciseFromPrompt({
+    topic: normalizeTopic(input.topic),
     userId: user.id,
   });
+}
 
-  const nextTopic = encodeURIComponent(topic);
-  redirect(`/sentence-translation?topic=${nextTopic}`);
+export async function createSentenceFromRandom(input: {
+  topic: string;
+}): Promise<SentenceExercise> {
+  const user = await getCurrentUser();
+
+  if (!user) {
+    throw new Error("Unauthorized");
+  }
+
+  return createSentenceExerciseFromRandomSentence({
+    topic: normalizeTopic(input.topic),
+    userId: user.id,
+  });
 }
 
 export async function recordSentenceAnswer(input: {
