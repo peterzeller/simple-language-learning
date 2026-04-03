@@ -7,6 +7,7 @@ export interface SentenceToken {
   target: string;
   wordId: number;
   isKnown: boolean;
+  isQuestion: boolean;
 }
 
 export interface SentenceQuestion {
@@ -39,13 +40,14 @@ function parseBilingualSentence(sentence: string): Array<{ source: string; targe
 }
 
 async function generateFromOpenAI(topic: string): Promise<string | null> {
-  const apiKey = process.env.OPENAI_API_KEY;
+  const apiKey = process.env.OPEN_AI_KEY;
 
   if (!apiKey) {
+    console.warn("Missing OpenAI API key, falling back to default sentence.");
     return null;
   }
 
-  const prompt = `Generate one short bilingual training sentence about "${topic}" in this exact format: ¿(Cómo|How) (estuvo|was) (tu|your) (fin|end) (de|of) (semana|week)?. Use Spanish as first language and English as second language. Return JSON only with key \"sentence\".`;
+  const prompt = `Generate a text in Spanish about the topic "${topic}". The text should include also the word-for-word translation for each word in the Spanish original, for example: ¿(Cómo|How) (estuvo|was) (tu|your) (fin|end) (de|of) (semana|week)?. Use Spanish as first language and English as second language. Return JSON only with key \"sentence\".`;
 
   try {
     const response = await fetch("https://api.openai.com/v1/responses", {
@@ -75,20 +77,32 @@ async function generateFromOpenAI(topic: string): Promise<string | null> {
       cache: "no-store",
     });
 
+    console.log("OpenAI API response:", response);
+
     if (!response.ok) {
+      console.warn("OpenAI API request failed, falling back to default sentence.");
       return null;
     }
 
-    const json = (await response.json()) as { output_text?: string };
+    const json = await response.json();
+    console.log("OpenAI API response JSON:", JSON.stringify(json));
 
-    if (!json.output_text) {
-      return null;
+
+    let sentence: string = ""
+    for (const outputItem of json.output) {
+      for (const item of outputItem.content) {
+        if (item.type !== "output_text") {
+          continue;
+        }
+        const textJ = JSON.parse(item.text);
+        sentence += textJ.sentence;
+      }
     }
+    console.log("Extracted sentence from OpenAI response:", sentence);
 
-    const parsed = JSON.parse(json.output_text) as { sentence?: string };
-
-    return parsed.sentence ?? null;
-  } catch {
+    return sentence
+  } catch (e) {
+    console.error("Error generating sentence from OpenAI:", e);
     return null;
   }
 }
@@ -127,7 +141,7 @@ export async function createSentenceExercise(input: {
   const pairs = parseBilingualSentence(sentence);
 
   if (pairs.length === 0) {
-    throw new Error("Could not generate a valid bilingual sentence.");
+    throw new Error(`Could not generate a valid bilingual sentence from '${sentence}'`);
   }
 
   const wordIdMap = await storeTranslationPairs(
@@ -152,10 +166,14 @@ export async function createSentenceExercise(input: {
       target: pair.target,
       wordId,
       isKnown: knownWordIds.has(wordId),
+      isQuestion: false,
     };
   });
 
   const questionIndexes = getRandomQuestionIndexes(tokens.length);
+  for (const index of questionIndexes) {
+    tokens[index].isQuestion = true;
+  }
   const optionPool = Array.from(new Set(tokens.map((token) => token.target)));
 
   const questions = questionIndexes.map((tokenIndex) => {

@@ -211,13 +211,13 @@
   background: #fffdfa;
   padding: 8px 10px;
   display: grid;
-  text-align: left;
-  min-width: 90px;
+  text-align: center;
+  font-size: 1.2rem;
   cursor: pointer;
 }
 
 .wordTranslation {
-  font-size: 0.75rem;
+  font-size: 0.6rem;
   color: #8a5a26;
 }
 

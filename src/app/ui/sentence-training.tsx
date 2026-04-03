@@ -29,7 +29,7 @@ export function SentenceTraining({ exercise }: SentenceTrainingProps) {
     <div className={styles.trainingLayout}>
       <div className={styles.sentenceLine}>
         {exercise.tokens.map((token, index) => {
-          const shouldReveal = !token.isKnown || revealedWords[index];
+          const shouldReveal = !token.isQuestion && (!token.isKnown || revealedWords[index])  ;
 
           return (
             <button
@@ -44,7 +44,7 @@ export function SentenceTraining({ exercise }: SentenceTrainingProps) {
             >
               <span>{token.source}</span>
               <small className={styles.wordTranslation}>
-                {shouldReveal ? token.target : "tap to reveal"}
+                {shouldReveal ? token.target : ""}
               </small>
             </button>
           );

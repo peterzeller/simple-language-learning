@@ -27,7 +27,7 @@ export default async function SentenceTranslationPage({
     redirect("/");
   }
 
-  const topic = normalizeTopic((await searchParams).topic);
+  const topic = normalizeTopic((await searchParams).topic) || "Random story";
   const exercise = topic
     ? await createSentenceExercise({
         topic,
@@ -45,12 +45,7 @@ export default async function SentenceTranslationPage({
         <form className={styles.topicForm} method="get">
           <label className={styles.field} htmlFor="topic">
             Topic
-            <select defaultValue={topic} id="topic" name="topic">
-              <option value="">Choose a topic</option>
-              <option value="weekend">Weekend</option>
-              <option value="travel">Travel</option>
-              <option value="food">Food</option>
-            </select>
+            <input defaultValue={topic} id="topic" name="topic" placeholder="Enter a topic" />
           </label>
           <button className={styles.primaryButton} type="submit">
             Generate sentence
