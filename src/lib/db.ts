@@ -58,9 +58,8 @@ function getRequiredEnv(name: string): string {
   return value;
 }
 
-const pool =
-  globalThis.__simpleLanguageLearningPool ??
-  new Pool({
+function getPool(): Pool {
+  globalThis.__simpleLanguageLearningPool ??= new Pool({
     host: getRequiredEnv("POSTGRES_HOST"),
     user: getRequiredEnv("POSTGRES_USER"),
     password: getRequiredEnv("POSTGRES_PASSWORD"),
@@ -68,21 +67,20 @@ const pool =
     port: Number(process.env.POSTGRES_PORT ?? 5432),
   });
 
-const db =
-  globalThis.__simpleLanguageLearningDb ??
-  new Kysely<Database>({
-    dialect: new PostgresDialect({ pool }),
-  });
-
-if (!globalThis.__simpleLanguageLearningPool) {
-  globalThis.__simpleLanguageLearningPool = pool;
+  return globalThis.__simpleLanguageLearningPool;
 }
 
-if (!globalThis.__simpleLanguageLearningDb) {
-  globalThis.__simpleLanguageLearningDb = db;
+export function getDb(): Kysely<Database> {
+  globalThis.__simpleLanguageLearningDb ??= new Kysely<Database>({
+    dialect: new PostgresDialect({ pool: getPool() }),
+  });
+
+  return globalThis.__simpleLanguageLearningDb;
 }
 
 export async function ensureUsersTable(): Promise<void> {
+  const db = getDb();
+
   globalThis.__simpleLanguageLearningUsersInit ??= db.schema
     .createTable("users")
     .ifNotExists()
@@ -108,6 +106,8 @@ export async function ensureUsersTable(): Promise<void> {
 }
 
 export async function ensureLearningTables(): Promise<void> {
+  const db = getDb();
+
   globalThis.__simpleLanguageLearningLearningInit ??= (async () => {
     await db.schema
       .createTable("words")
@@ -158,5 +158,3 @@ export async function initializeDatabase(): Promise<void> {
   await ensureUsersTable();
   await ensureLearningTables();
 }
-
-export { db };

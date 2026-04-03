@@ -1,6 +1,6 @@
 import "server-only";
 
-import { db, ensureLearningTables } from "@/lib/db";
+import { ensureLearningTables, getDb } from "@/lib/db";
 
 interface TranslationPair {
   sourceWord: string;
@@ -14,6 +14,7 @@ function normalizeWord(word: string): string {
 }
 
 async function getOrCreateWord(language: string, word: string): Promise<number> {
+  const db = getDb();
   const normalizedWord = normalizeWord(word);
 
   const existing = await db
@@ -43,6 +44,7 @@ export async function storeTranslationPairs(
   pairs: TranslationPair[],
 ): Promise<Map<string, number>> {
   await ensureLearningTables();
+  const db = getDb();
 
   const sourceWordToId = new Map<string, number>();
 
@@ -75,6 +77,7 @@ export async function storeTranslationPairs(
 
 export async function getKnownWordIdsForUser(userId: number): Promise<Set<number>> {
   await ensureLearningTables();
+  const db = getDb();
 
   const rows = await db
     .selectFrom("user_learning")
@@ -104,6 +107,7 @@ export async function recordLearningEvent(input: {
   isCorrect: boolean;
 }): Promise<void> {
   await ensureLearningTables();
+  const db = getDb();
 
   await db
     .insertInto("user_learning")

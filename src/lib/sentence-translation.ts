@@ -30,10 +30,7 @@ function parseBilingualSentence(sentence: string): Array<{ source: string; targe
   let currentBeforeParentheses = "";
   let currentSource = "";
   let currentTarget = "";
-  let result: Array<{ source: string; target: string }> = [];
-
-
-
+  const result: Array<{ source: string; target: string }> = [];
 
   for (const char of sentence) {
     if (char === "(") {
