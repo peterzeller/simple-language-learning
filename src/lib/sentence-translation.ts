@@ -1,5 +1,7 @@
 import "server-only";
 
+import { sql } from "kysely";
+import { ensureLearningTables, getDb } from "@/lib/db";
 import { getKnownWordIdsForUser, normalizeWord, storeTranslationPairs } from "@/lib/learning";
 import { parseBilingualSentence } from "@/lib/parse-bilingual-sentence";
 
@@ -20,6 +22,36 @@ export interface SentenceQuestion {
 export interface SentenceExercise {
   tokens: SentenceToken[];
   questions: SentenceQuestion[];
+}
+
+async function saveGeneratedSentence(input: {
+  topic: string;
+  rawSentence: string;
+}): Promise<void> {
+  await ensureLearningTables();
+  const db = getDb();
+
+  await db
+    .insertInto("sentence_translations")
+    .values({
+      topic: input.topic,
+      raw_sentence: input.rawSentence,
+    })
+    .execute();
+}
+
+async function getRandomSavedSentence(): Promise<string | null> {
+  await ensureLearningTables();
+  const db = getDb();
+
+  const row = await db
+    .selectFrom("sentence_translations")
+    .select("raw_sentence")
+    .orderBy(sql`RANDOM()`)
+    .limit(1)
+    .executeTakeFirst();
+
+  return row?.raw_sentence ?? null;
 }
 
 async function generateFromOpenAI(topic: string): Promise<string | null> {
@@ -112,13 +144,12 @@ function getRandomQuestionIndexes(length: number): number[] {
   return indexes.slice(0, Math.min(2, length));
 }
 
-export async function createSentenceExercise(input: {
-  topic: string;
+async function createSentenceExerciseFromRawSentence(input: {
+  sentence: string;
   userId: number;
 }): Promise<SentenceExercise> {
-  const aiSentence = await generateFromOpenAI(input.topic);
-  console.log("Generated AI sentence:", aiSentence);
-  const sentence = aiSentence ?? fallbackSentence(input.topic);
+  console.log("Generated AI sentence:", input.sentence);
+  const sentence = input.sentence;
   const pairs = parseBilingualSentence(sentence);
 
   if (pairs.length === 0) {
@@ -175,4 +206,37 @@ export async function createSentenceExercise(input: {
   });
 
   return { tokens, questions };
+}
+
+export async function createSentenceExerciseFromPrompt(input: {
+  topic: string;
+  userId: number;
+}): Promise<SentenceExercise> {
+  const aiSentence = await generateFromOpenAI(input.topic);
+  const sentence = aiSentence ?? fallbackSentence(input.topic);
+  await saveGeneratedSentence({
+    topic: input.topic,
+    rawSentence: sentence,
+  });
+
+  return createSentenceExerciseFromRawSentence({
+    sentence,
+    userId: input.userId,
+  });
+}
+
+export async function createSentenceExerciseFromRandomSentence(input: {
+  topic: string;
+  userId: number;
+}): Promise<SentenceExercise> {
+  const sentence = await getRandomSavedSentence();
+
+  if (!sentence) {
+    return createSentenceExerciseFromPrompt(input);
+  }
+
+  return createSentenceExerciseFromRawSentence({
+    sentence,
+    userId: input.userId,
+  });
 }
