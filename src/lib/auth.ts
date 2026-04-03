@@ -4,7 +4,7 @@ import { randomBytes, scrypt as scryptCallback, timingSafeEqual } from "node:cry
 import { promisify } from "node:util";
 import { cookies } from "next/headers";
 
-import { db, ensureUsersTable } from "@/lib/db";
+import { ensureUsersTable, getDb } from "@/lib/db";
 
 const scrypt = promisify(scryptCallback);
 
@@ -62,6 +62,7 @@ export function createSessionToken(): string {
 
 export async function createUserSession(userId: number): Promise<void> {
   await ensureUsersTable();
+  const db = getDb();
 
   const sessionToken = createSessionToken();
   const sessionTokenHash = await sha256Hex(sessionToken);
@@ -89,31 +90,32 @@ export async function createUserSession(userId: number): Promise<void> {
 }
 
 export async function clearUserSession(): Promise<void> {
-  await ensureUsersTable();
-
   const cookieStore = await cookies();
   const sessionToken = cookieStore.get(SESSION_COOKIE_NAME)?.value;
 
-  if (sessionToken) {
-    const sessionTokenHash = await sha256Hex(sessionToken);
-
-    await db
-      .updateTable("users")
-      .set({
-        session_token_hash: null,
-        session_expires_at: null,
-        updated_at: new Date(),
-      })
-      .where("session_token_hash", "=", sessionTokenHash)
-      .executeTakeFirst();
+  if (!sessionToken) {
+    cookieStore.delete(SESSION_COOKIE_NAME);
+    return;
   }
+
+  await ensureUsersTable();
+  const db = getDb();
+  const sessionTokenHash = await sha256Hex(sessionToken);
+
+  await db
+    .updateTable("users")
+    .set({
+      session_token_hash: null,
+      session_expires_at: null,
+      updated_at: new Date(),
+    })
+    .where("session_token_hash", "=", sessionTokenHash)
+    .executeTakeFirst();
 
   cookieStore.delete(SESSION_COOKIE_NAME);
 }
 
 export async function getCurrentUser(): Promise<SessionUser | null> {
-  await ensureUsersTable();
-
   const cookieStore = await cookies();
   const sessionToken = cookieStore.get(SESSION_COOKIE_NAME)?.value;
 
@@ -121,6 +123,8 @@ export async function getCurrentUser(): Promise<SessionUser | null> {
     return null;
   }
 
+  await ensureUsersTable();
+  const db = getDb();
   const sessionTokenHash = await sha256Hex(sessionToken);
   const user = await db
     .selectFrom("users")
@@ -143,4 +147,3 @@ export async function getCurrentUser(): Promise<SessionUser | null> {
 }
 
 export { normalizeEmail };
-

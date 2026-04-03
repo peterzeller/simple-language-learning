@@ -11,7 +11,7 @@ import {
   normalizeEmail,
   verifyPassword,
 } from "@/lib/auth";
-import { db, ensureUsersTable } from "@/lib/db";
+import { ensureUsersTable, getDb } from "@/lib/db";
 
 function readCredentials(formData: FormData): {
   email: string;
@@ -51,6 +51,7 @@ export async function login(
   formData: FormData,
 ): Promise<AuthFormState> {
   await ensureUsersTable();
+  const db = getDb();
 
   const { email, password } = readCredentials(formData);
   const validationError = validateCredentials(email, password);
@@ -84,6 +85,7 @@ export async function register(
   formData: FormData,
 ): Promise<AuthFormState> {
   await ensureUsersTable();
+  const db = getDb();
 
   const { email, password } = readCredentials(formData);
   const validationError = validateCredentials(email, password);
