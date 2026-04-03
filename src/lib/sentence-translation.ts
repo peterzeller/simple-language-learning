@@ -5,6 +5,14 @@ import { ensureLearningTables, getDb } from "@/lib/db";
 import { getKnownWordIdsForUser, normalizeWord, storeTranslationPairs } from "@/lib/learning";
 import { parseBilingualSentence } from "@/lib/parse-bilingual-sentence";
 
+const ENRICHING_PROMPT_BUILDERS = [
+  (topic: string) => `Create a joke in Spanish about ${topic}.`,
+  (topic: string) => `Create a dialogue in Spanish where two people talk about ${topic}.`,
+  (topic: string) => `Create a short story in Spanish where ${topic} appears.`,
+  (topic: string) => `Create a vivid scene in Spanish inspired by ${topic}.`,
+  (topic: string) => `Create a mini mystery in Spanish related to ${topic}.`,
+];
+
 export interface SentenceToken {
   source: string;
   target: string;
@@ -62,9 +70,16 @@ async function generateFromOpenAI(topic: string): Promise<string | null> {
     return null;
   }
 
-  const prompt = `Generate a text in Spanish about the topic "${topic}". The text should include also the word-for-word translation for each word in the Spanish original, for example: ¿(Cómo|How) (estuvo|was) (tu|your) (fin|end) (de|of) (semana|week)?. Use Spanish as first language and English as second language. Return JSON only with key \"sentence\".`;
+  const basePrompt = topic.trim();
+  const usePromptAsIs = basePrompt.length > 50;
+  const selectedPrompt = usePromptAsIs
+    ? basePrompt
+    : ENRICHING_PROMPT_BUILDERS[Math.floor(Math.random() * ENRICHING_PROMPT_BUILDERS.length)](
+      basePrompt || "everyday life",
+    );
+  const firstPrompt = `You are helping Spanish learners. Write an interesting Spanish text based on this prompt: "${selectedPrompt}". Return JSON only with key "spanishText".`;
 
-  try {
+  async function requestOpenAIJson<T>(inputPrompt: string): Promise<T | null> {
     const response = await fetch("https://api.openai.com/v1/responses", {
       method: "POST",
       headers: {
@@ -73,46 +88,66 @@ async function generateFromOpenAI(topic: string): Promise<string | null> {
       },
       body: JSON.stringify({
         model: "gpt-4.1-mini",
-        input: prompt,
-        text: {
-          format: {
-            type: "json_schema",
-            name: "sentence_response",
-            schema: {
-              type: "object",
-              properties: {
-                sentence: { type: "string" },
-              },
-              required: ["sentence"],
-              additionalProperties: false,
-            },
-          },
-        },
+        input: inputPrompt,
       }),
       cache: "no-store",
     });
 
-
     if (!response.ok) {
-      console.warn("OpenAI API request failed, falling back to default sentence.");
       return null;
     }
 
     const json = await response.json();
+    const texts: string[] = [];
 
-
-    let sentence: string = ""
-    for (const outputItem of json.output) {
+    for (const outputItem of json.output ?? []) {
       for (const item of outputItem.content) {
-        if (item.type !== "output_text") {
-          continue;
+        if (item.type === "output_text") {
+          texts.push(item.text);
         }
-        const textJ = JSON.parse(item.text);
-        sentence += textJ.sentence;
+
+        if (item.type === "text") {
+          texts.push(item.value);
+        }
       }
     }
 
-    return sentence
+    for (const text of texts) {
+      try {
+        return JSON.parse(text) as T;
+      } catch {
+        continue;
+      }
+    }
+
+    return null;
+  }
+
+  try {
+    const firstResponse = await requestOpenAIJson<{ spanishText: string }>(firstPrompt);
+    const spanishText = firstResponse?.spanishText?.trim();
+
+    if (!spanishText) {
+      console.warn("OpenAI generation step failed, falling back to default sentence.");
+      return null;
+    }
+
+    const translationRequestPrompt = `Transform the following Spanish text into bilingual token format where each Spanish token is paired with a natural English translation like (hola|hello). Preserve punctuation and order. Return JSON only with key "sentence". Spanish text: "${spanishText}"`;
+    const secondResponse = await requestOpenAIJson<{ sentence: string }>(translationRequestPrompt);
+
+    if (!secondResponse?.sentence?.trim()) {
+      console.warn("OpenAI translation step failed, falling back to default sentence.");
+      return null;
+    }
+
+    const sentence = secondResponse.sentence;
+
+    if (parseBilingualSentence(sentence).length === 0) {
+      console.warn("OpenAI returned an invalid bilingual format, falling back to default sentence.");
+      return null;
+    }
+
+    return sentence;
   } catch (e) {
     console.error("Error generating sentence from OpenAI:", e);
     return null;
