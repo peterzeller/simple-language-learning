@@ -77,7 +77,6 @@ async function generateFromOpenAI(topic: string): Promise<string | null> {
       cache: "no-store",
     });
 
-    console.log("OpenAI API response:", response);
 
     if (!response.ok) {
       console.warn("OpenAI API request failed, falling back to default sentence.");
@@ -85,7 +84,6 @@ async function generateFromOpenAI(topic: string): Promise<string | null> {
     }
 
     const json = await response.json();
-    console.log("OpenAI API response JSON:", JSON.stringify(json));
 
 
     let sentence: string = ""
@@ -98,7 +96,6 @@ async function generateFromOpenAI(topic: string): Promise<string | null> {
         sentence += textJ.sentence;
       }
     }
-    console.log("Extracted sentence from OpenAI response:", sentence);
 
     return sentence
   } catch (e) {
