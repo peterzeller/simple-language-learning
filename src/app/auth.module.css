@@ -131,6 +131,7 @@
   width: min(100%, 720px);
   display: grid;
   gap: 20px;
+  align-self: start;
   padding: 32px;
   border: 1px solid rgba(117, 76, 36, 0.12);
   border-radius: 28px;
