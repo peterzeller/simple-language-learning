@@ -2,7 +2,12 @@ import "server-only";
 
 import { sql } from "kysely";
 import { ensureLearningTables, getDb } from "@/lib/db";
-import { getKnownWordIdsForUser, normalizeWord, storeTranslationPairs } from "@/lib/learning";
+import {
+  getKnownWordIdsForUser,
+  getWordAccuracyByIdForUser,
+  normalizeWord,
+  storeTranslationPairs,
+} from "@/lib/learning";
 import { parseBilingualSentence } from "@/lib/parse-bilingual-sentence";
 
 export interface SentenceToken {
@@ -10,6 +15,7 @@ export interface SentenceToken {
   target: string;
   wordId: number;
   isKnown: boolean;
+  revealByDefault: boolean;
   isQuestion: boolean;
 }
 
@@ -166,6 +172,7 @@ async function createSentenceExerciseFromRawSentence(input: {
   );
 
   const knownWordIds = await getKnownWordIdsForUser(input.userId);
+  const accuracyByWordId = await getWordAccuracyByIdForUser(input.userId);
   const tokens: SentenceToken[] = pairs.map((pair) => {
     const wordId = wordIdMap.get(normalizeWord(pair.source));
 
@@ -173,11 +180,14 @@ async function createSentenceExerciseFromRawSentence(input: {
       throw new Error("Missing word id for generated sentence token.");
     }
 
+    const accuracy = accuracyByWordId.get(wordId);
+
     return {
       source: pair.source,
       target: pair.target,
       wordId,
       isKnown: knownWordIds.has(wordId),
+      revealByDefault: accuracy === undefined || accuracy === 0,
       isQuestion: false,
     };
   });

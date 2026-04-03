@@ -118,6 +118,34 @@ export async function getKnownWordIdsForUser(userId: number): Promise<Set<number
   return knownWordIds;
 }
 
+export async function getWordAccuracyByIdForUser(userId: number): Promise<Map<number, number>> {
+  await ensureLearningTables();
+  const db = getDb();
+
+  const rows = await db
+    .selectFrom("user_learning")
+    .select((expressionBuilder) => [
+      "word_id",
+      expressionBuilder.fn.count<number>("id").as("attempt_count"),
+      expressionBuilder.fn.count<number>("id").filterWhere("is_correct", "=", true).as("correct_count"),
+    ])
+    .where("user_id", "=", userId)
+    .groupBy("word_id")
+    .execute();
+
+  const accuracyByWordId = new Map<number, number>();
+
+  for (const row of rows) {
+    if (row.attempt_count <= 0) {
+      continue;
+    }
+
+    accuracyByWordId.set(row.word_id, row.correct_count / row.attempt_count);
+  }
+
+  return accuracyByWordId;
+}
+
 export async function recordLearningEvent(input: {
   userId: number;
   wordId: number;
