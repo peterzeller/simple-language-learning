@@ -2,7 +2,7 @@
 
 import { useMemo, useState, useTransition } from "react";
 
-import { recordSentenceAnswer } from "@/app/sentence-translation/actions";
+import { recordSentenceAnswer, recordSentenceReveal } from "@/app/sentence-translation/actions";
 import type { SentenceExercise } from "@/lib/sentence-translation";
 import styles from "@/app/auth.module.css";
 
@@ -64,7 +64,18 @@ export function SentenceTraining({ exercise }: SentenceTrainingProps) {
                 }
 
                 if (token.isKnown) {
-                  setRevealedWords((prev) => ({ ...prev, [index]: !prev[index] }));
+                  let shouldRecordReveal = false;
+                  setRevealedWords((prev) => {
+                    const nextIsRevealed = !prev[index];
+                    shouldRecordReveal = nextIsRevealed;
+                    return { ...prev, [index]: nextIsRevealed };
+                  });
+
+                  if (shouldRecordReveal) {
+                    startTransition(async () => {
+                      await recordSentenceReveal({ wordId: token.wordId });
+                    });
+                  }
                 }
               }}
               type="button"

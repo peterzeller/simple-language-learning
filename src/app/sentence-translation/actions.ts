@@ -19,3 +19,17 @@ export async function recordSentenceAnswer(input: {
     isCorrect: input.isCorrect,
   });
 }
+
+export async function recordSentenceReveal(input: { wordId: number }): Promise<void> {
+  const user = await getCurrentUser();
+
+  if (!user) {
+    return;
+  }
+
+  await recordLearningEvent({
+    userId: user.id,
+    wordId: input.wordId,
+    isCorrect: false,
+  });
+}
