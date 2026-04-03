@@ -209,13 +209,14 @@ function fallbackSentence(topic: string): string {
 
 function getRandomQuestionIndexes(length: number): number[] {
   const indexes = Array.from({ length }, (_, index) => index);
+  const questionCount = Math.max(1, Math.ceil(length * 0.1));
 
   for (let index = indexes.length - 1; index > 0; index -= 1) {
     const swapIndex = Math.floor(Math.random() * (index + 1));
     [indexes[index], indexes[swapIndex]] = [indexes[swapIndex], indexes[index]];
   }
 
-  return indexes.slice(0, Math.min(2, length));
+  return indexes.slice(0, Math.min(questionCount, length));
 }
 
 async function createSentenceExerciseFromRawSentence(input: {
