@@ -18,6 +18,15 @@ export function VocabularyTraining({ initialQuestion }: VocabularyTrainingProps)
   const [feedback, setFeedback] = useState<FeedbackState>(null);
   const [isPending, startTransition] = useTransition();
 
+  const loadNextQuestion = () => {
+    startTransition(async () => {
+      const nextQuestion = await getNextVocabularyQuestion();
+      setQuestion(nextQuestion);
+      setSelectedOption(null);
+      setFeedback(null);
+    });
+  };
+
   if (!question) {
     return <p className={styles.helperText}>Add more translated words first to start this game.</p>;
   }
@@ -61,18 +70,20 @@ export function VocabularyTraining({ initialQuestion }: VocabularyTrainingProps)
                 setSelectedOption(option);
                 setFeedback(isCorrect ? "correct" : "wrong");
 
-                window.setTimeout(() => {
-                  startTransition(async () => {
-                    const nextQuestion = await submitVocabularyAnswer({
-                      wordId: question.wordId,
-                      isCorrect,
-                    });
-
-                    setQuestion(nextQuestion);
-                    setSelectedOption(null);
-                    setFeedback(null);
+                startTransition(async () => {
+                  const nextQuestion = await submitVocabularyAnswer({
+                    wordId: question.wordId,
+                    isCorrect,
                   });
-                }, 300);
+
+                  if (isCorrect) {
+                    window.setTimeout(() => {
+                      setQuestion(nextQuestion);
+                      setSelectedOption(null);
+                      setFeedback(null);
+                    }, 300);
+                  }
+                });
               }}
               type="button"
             >
@@ -84,19 +95,27 @@ export function VocabularyTraining({ initialQuestion }: VocabularyTrainingProps)
 
       <button
         className={styles.secondaryButton}
-        disabled={isPending || feedback !== null}
+        disabled={isPending || feedback === "wrong"}
         onClick={() => {
-          startTransition(async () => {
-            const nextQuestion = await getNextVocabularyQuestion();
-            setQuestion(nextQuestion);
-            setSelectedOption(null);
-            setFeedback(null);
-          });
+          loadNextQuestion();
         }}
         type="button"
       >
         Skip
       </button>
+
+      {feedback === "wrong" && (
+        <button
+          className={styles.primaryButton}
+          disabled={isPending}
+          onClick={() => {
+            loadNextQuestion();
+          }}
+          type="button"
+        >
+          Next question
+        </button>
+      )}
     </div>
   );
 }
