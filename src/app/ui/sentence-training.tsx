@@ -18,6 +18,7 @@ interface AnswerState {
 export function SentenceTraining({ exercise }: SentenceTrainingProps) {
   const [revealedWords, setRevealedWords] = useState<Record<number, boolean>>({});
   const [answers, setAnswers] = useState<Record<number, AnswerState>>({});
+  const [activeQuestionIndex, setActiveQuestionIndex] = useState<number | null>(null);
   const [isPending, startTransition] = useTransition();
 
   const questionByIndex = useMemo(
@@ -25,17 +26,43 @@ export function SentenceTraining({ exercise }: SentenceTrainingProps) {
     [exercise.questions],
   );
 
+  const activeQuestion =
+    activeQuestionIndex !== null ? questionByIndex.get(activeQuestionIndex) : undefined;
+  const activeToken =
+    activeQuestionIndex !== null ? exercise.tokens[activeQuestionIndex] : undefined;
+
   return (
     <div className={styles.trainingLayout}>
       <div className={styles.sentenceLine}>
         {exercise.tokens.map((token, index) => {
-          const shouldReveal = !token.isQuestion && (!token.isKnown || revealedWords[index])  ;
+          const question = questionByIndex.get(index);
+          const answer = answers[index];
+          const shouldReveal = !token.isQuestion && (!token.isKnown || revealedWords[index]);
+
+          const cardClassName = [styles.wordCard];
+
+          if (question && !answer) {
+            cardClassName.push(styles.wordCardQuestion);
+          }
+
+          if (answer?.isCorrect) {
+            cardClassName.push(styles.wordCardCorrect);
+          }
+
+          if (answer && !answer.isCorrect) {
+            cardClassName.push(styles.wordCardWrong);
+          }
 
           return (
             <button
-              className={styles.wordCard}
+              className={cardClassName.join(" ")}
               key={`${token.source}-${index}`}
               onClick={() => {
+                if (question) {
+                  setActiveQuestionIndex(index);
+                  return;
+                }
+
                 if (token.isKnown) {
                   setRevealedWords((prev) => ({ ...prev, [index]: !prev[index] }));
                 }
@@ -44,77 +71,75 @@ export function SentenceTraining({ exercise }: SentenceTrainingProps) {
             >
               <span>{token.source}</span>
               <small className={styles.wordTranslation}>
-                {shouldReveal ? token.target : ""}
+                {answer || shouldReveal ? token.target : ""}
               </small>
             </button>
           );
         })}
       </div>
 
-      {exercise.tokens.map((token, index) => {
-        const question = questionByIndex.get(index);
-
-        if (!question) {
-          return null;
-        }
-
-        const answer = answers[index];
-
-        return (
-          <section className={styles.questionBlock} key={index}>
+      {activeQuestion && activeToken && activeQuestionIndex !== null && (
+        <dialog className={styles.translationDialog} onClose={() => setActiveQuestionIndex(null)} open>
+          <div className={styles.dialogHeading}>
             <h2>
-              Select the translation for <strong>{token.source}</strong>
+              Select the translation for <strong>{activeToken.source}</strong>
             </h2>
-            <div className={styles.optionsGrid}>
-              {question.options.map((option) => {
-                const isSelected = answer?.selectedOption === option;
-                const isCorrectOption = option === question.correctAnswer;
-                const isWrongSelected = isSelected && answer && !answer.isCorrect;
+            <button
+              aria-label="Close translation dialog"
+              className={styles.dialogClose}
+              onClick={() => setActiveQuestionIndex(null)}
+              type="button"
+            >
+              ×
+            </button>
+          </div>
+          <div className={styles.optionsGrid}>
+            {activeQuestion.options.map((option) => {
+              const answer = answers[activeQuestionIndex];
+              const isSelected = answer?.selectedOption === option;
+              const isCorrectOption = option === activeQuestion.correctAnswer;
+              const isWrongSelected = isSelected && answer && !answer.isCorrect;
 
-                return (
-                  <button
-                    className={`${styles.optionButton} ${
-                      isSelected && answer?.isCorrect ? styles.optionCorrect : ""
-                    } ${isWrongSelected ? styles.optionWrong : ""}`}
-                    key={option}
-                    onClick={() => {
-                      if (answer) {
-                        return;
-                      }
+              return (
+                <button
+                  className={`${styles.optionButton} ${
+                    isSelected && answer?.isCorrect ? styles.optionCorrect : ""
+                  } ${isWrongSelected ? styles.optionWrong : ""}`}
+                  key={option}
+                  onClick={() => {
+                    if (answer) {
+                      return;
+                    }
 
-                      const isCorrect = option === question.correctAnswer;
-                      setAnswers((prev) => ({
-                        ...prev,
-                        [index]: {
-                          selectedOption: option,
-                          isCorrect,
-                        },
-                      }));
+                    const isCorrect = option === activeQuestion.correctAnswer;
+                    setAnswers((prev) => ({
+                      ...prev,
+                      [activeQuestionIndex]: {
+                        selectedOption: option,
+                        isCorrect,
+                      },
+                    }));
+                    setActiveQuestionIndex(null);
 
-                      startTransition(async () => {
-                        await recordSentenceAnswer({
-                          wordId: token.wordId,
-                          isCorrect,
-                        });
+                    startTransition(async () => {
+                      await recordSentenceAnswer({
+                        wordId: activeToken.wordId,
+                        isCorrect,
                       });
-                    }}
-                    type="button"
-                  >
-                    <span className={isCorrectOption && answer ? styles.correctLabel : undefined}>
-                      {option}
-                    </span>
-                  </button>
-                );
-              })}
-            </div>
-            {answer && (
-              <p className={answer.isCorrect ? styles.feedbackCorrect : styles.feedbackWrong}>
-                {answer.isCorrect ? "Correct!" : "Not quite—see the bold answer above."}
-              </p>
-            )}
-          </section>
-        );
-      })}
+                    });
+                  }}
+                  type="button"
+                >
+                  <span className={isCorrectOption && answer ? styles.correctLabel : undefined}>
+                    {option}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        </dialog>
+      )}
+
       {isPending && <p className={styles.helperText}>Saving your progress…</p>}
     </div>
   );
