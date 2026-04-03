@@ -346,6 +346,21 @@
   gap: 8px;
 }
 
+.vocabularyPrompt {
+  display: grid;
+  gap: 6px;
+  text-align: center;
+}
+
+.vocabularyPrompt h2 {
+  font-size: clamp(1.8rem, 5vw, 2.4rem);
+  color: #2e1c0f;
+}
+
+.vocabularyPrompt p {
+  color: #5d4633;
+}
+
 .optionButton {
   border: 1px solid #d8c4ad;
   border-radius: 10px;

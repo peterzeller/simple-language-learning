@@ -43,8 +43,8 @@ export default async function Home() {
             <article className={styles.gameCard}>
               <h2>Vocabulary training</h2>
               <p>Drill individual words and build up your personal dictionary.</p>
-              <Link className={styles.secondaryButton} href="/vocabulary-training">
-                Coming soon
+              <Link className={styles.primaryButton} href="/vocabulary-training">
+                Start game
               </Link>
             </article>
           </div>

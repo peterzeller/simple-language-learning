@@ -3,6 +3,8 @@ import { redirect } from "next/navigation";
 
 import styles from "@/app/auth.module.css";
 import { getCurrentUser } from "@/lib/auth";
+import { getVocabularyQuestionForUser } from "@/lib/learning";
+import { VocabularyTraining } from "@/app/ui/vocabulary-training";
 
 export default async function VocabularyTrainingPage() {
   const user = await getCurrentUser();
@@ -11,12 +13,17 @@ export default async function VocabularyTrainingPage() {
     redirect("/");
   }
 
+  const initialQuestion = await getVocabularyQuestionForUser(user.id);
+
   return (
     <main className={styles.page}>
       <section className={styles.sessionCard}>
         <span className={styles.eyebrow}>Vocabulary training</span>
-        <h1>Coming soon</h1>
-        <p>Vocabulary training will be added in a follow-up task.</p>
+        <h1>Practice vocabulary</h1>
+        <p>Select the correct translation for each word.</p>
+
+        <VocabularyTraining initialQuestion={initialQuestion} />
+
         <Link className={styles.helperLink} href="/">
           ← Back to home
         </Link>
