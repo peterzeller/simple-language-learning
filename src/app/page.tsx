@@ -49,11 +49,19 @@ export default async function Home() {
             </article>
           </div>
 
-          <form className={styles.logoutForm} action={logout}>
-            <button className={styles.secondaryButton} type="submit">
-              Log out
-            </button>
-          </form>
+          <div className={styles.topicActions}>
+            {user.id === 1 ? (
+              <Link className={styles.helperLink} href="/admin">
+                Open admin interface →
+              </Link>
+            ) : null}
+
+            <form className={styles.logoutForm} action={logout}>
+              <button className={styles.secondaryButton} type="submit">
+                Log out
+              </button>
+            </form>
+          </div>
         </section>
       </main>
     );
