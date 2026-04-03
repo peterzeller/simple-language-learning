@@ -250,10 +250,15 @@
 }
 
 .translationDialog {
+  position: fixed;
+  inset: 50% auto auto 50%;
+  transform: translate(-50%, -50%);
+  margin: 0;
   border: 1px solid #e2d6c8;
   border-radius: 16px;
   padding: 16px;
   width: min(560px, calc(100vw - 32px));
+  background: #fffdfa;
 }
 
 .translationDialog::backdrop {
@@ -282,7 +287,7 @@
 
 .optionsGrid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  grid-template-columns: 1fr;
   gap: 8px;
 }
 

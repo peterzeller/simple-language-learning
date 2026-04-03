@@ -117,6 +117,7 @@ export async function createSentenceExercise(input: {
   userId: number;
 }): Promise<SentenceExercise> {
   const aiSentence = await generateFromOpenAI(input.topic);
+  console.log("Generated AI sentence:", aiSentence);
   const sentence = aiSentence ?? fallbackSentence(input.topic);
   const pairs = parseBilingualSentence(sentence);
 
