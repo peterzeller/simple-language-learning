@@ -1,6 +1,7 @@
 import "server-only";
 
 import { getKnownWordIdsForUser, normalizeWord, storeTranslationPairs } from "@/lib/learning";
+import { parseBilingualSentence } from "@/lib/parse-bilingual-sentence";
 
 export interface SentenceToken {
   source: string;
@@ -19,57 +20,6 @@ export interface SentenceQuestion {
 export interface SentenceExercise {
   tokens: SentenceToken[];
   questions: SentenceQuestion[];
-}
-
-// parses a sentence that is expected to have format
-// "(source|target) (source|target) ...", for example:
-// "or source(target), and it returns an array of { source, target } pairs."
-function parseBilingualSentence(sentence: string): Array<{ source: string; target: string }> {
-  let inParentheses = false;
-  let afterBar = false;
-  let currentBeforeParentheses = "";
-  let currentSource = "";
-  let currentTarget = "";
-  const result: Array<{ source: string; target: string }> = [];
-
-  for (const char of sentence) {
-    if (char === "(") {
-      inParentheses = true;
-      currentSource = "";
-      currentTarget = "";
-    } else if (char === ")") {
-      if (inParentheses) {
-        if (currentTarget) {
-          result.push({ source: currentBeforeParentheses + currentSource, target: currentTarget.trim() });
-        } else {
-          // only one part in parentheses, treat it as the translation of the previous word
-          result.push({ source: currentBeforeParentheses, target: currentSource });
-        }
-        inParentheses = false;
-        currentBeforeParentheses = "";
-        currentSource = "";
-        currentTarget = "";
-      } else {
-        currentBeforeParentheses += char;
-      }
-    } else if (inParentheses) {
-      if (char === "|") {
-        afterBar = true;
-        continue;
-      }
-      if (afterBar) {
-        currentTarget += char;
-      } else {
-        currentSource += char;
-      }
-    } else {
-      currentBeforeParentheses += char;
-    }
-  }
-  if (currentBeforeParentheses) {
-    result.push({ source: currentBeforeParentheses, target: "" });
-  }
-  return result;
 }
 
 async function generateFromOpenAI(topic: string): Promise<string | null> {
@@ -167,6 +117,7 @@ export async function createSentenceExercise(input: {
   userId: number;
 }): Promise<SentenceExercise> {
   const aiSentence = await generateFromOpenAI(input.topic);
+  console.log("Generated AI sentence:", aiSentence);
   const sentence = aiSentence ?? fallbackSentence(input.topic);
   const pairs = parseBilingualSentence(sentence);
 
