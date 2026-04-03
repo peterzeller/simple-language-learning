@@ -221,9 +221,57 @@
   background: #fff1e0;
 }
 
+.wordCardQuestion {
+  border-color: #8fc3ff;
+  background: #eaf4ff;
+  color: #10427a;
+}
+
+.wordCardQuestion:hover {
+  border-color: #6eaef4;
+  background: #dbecff;
+}
+
+.wordCardCorrect {
+  border-color: #63ba83;
+  background: #e6f8ec;
+  color: #1c6f3e;
+}
+
+.wordCardWrong {
+  border-color: #d87878;
+  background: #ffeaea;
+  color: #9a3232;
+}
+
 .wordTranslation {
   font-size: 0.6rem;
   color: #8a5a26;
+}
+
+.translationDialog {
+  border: 1px solid #e2d6c8;
+  border-radius: 16px;
+  padding: 16px;
+  width: min(560px, calc(100vw - 32px));
+}
+
+.translationDialog::backdrop {
+  background: rgba(24, 20, 16, 0.4);
+}
+
+.dialogHeading {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.dialogClose {
+  border: 0;
+  background: transparent;
+  font-size: 1.4rem;
+  cursor: pointer;
+  color: #5d4633;
 }
 
 .questionBlock {
