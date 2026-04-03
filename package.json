@@ -7,7 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint .",
-    "test": "tsc --noEmit"
+    "test": "tsc --noEmit && node --test --experimental-strip-types test/*.test.ts"
   },
   "dependencies": {
     "kysely": "^0.28.14",
