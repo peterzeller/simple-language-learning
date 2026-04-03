@@ -34,11 +34,19 @@ interface UserLearningTable {
   is_correct: boolean;
 }
 
+interface SentenceTranslationsTable {
+  id: Generated<number>;
+  topic: string;
+  raw_sentence: string;
+  created_at: Generated<TimestampColumn>;
+}
+
 interface Database {
   users: UsersTable;
   words: WordsTable;
   word_links: WordLinksTable;
   user_learning: UserLearningTable;
+  sentence_translations: SentenceTranslationsTable;
 }
 
 declare global {
@@ -148,6 +156,19 @@ export async function ensureLearningTables(): Promise<void> {
         column.notNull().defaultTo(sql`CURRENT_TIMESTAMP`),
       )
       .addColumn("is_correct", "boolean", (column) => column.notNull())
+      .execute();
+
+    await db.schema
+      .createTable("sentence_translations")
+      .ifNotExists()
+      .addColumn("id", "integer", (column) =>
+        column.generatedAlwaysAsIdentity().primaryKey(),
+      )
+      .addColumn("topic", "text", (column) => column.notNull())
+      .addColumn("raw_sentence", "text", (column) => column.notNull())
+      .addColumn("created_at", "timestamptz", (column) =>
+        column.notNull().defaultTo(sql`CURRENT_TIMESTAMP`),
+      )
       .execute();
   })();
 

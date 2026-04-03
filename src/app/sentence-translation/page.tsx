@@ -2,12 +2,15 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 
 import { getCurrentUser } from "@/lib/auth";
-import { createSentenceExercise } from "@/lib/sentence-translation";
+import {
+  createSentenceExerciseFromPrompt,
+  createSentenceExerciseFromRandomSentence,
+} from "@/lib/sentence-translation";
 import styles from "@/app/auth.module.css";
 import { SentenceTraining } from "@/app/ui/sentence-training";
 
 interface SentenceTranslationPageProps {
-  searchParams: Promise<{ topic?: string | string[] }>;
+  searchParams: Promise<{ topic?: string | string[]; action?: string | string[] }>;
 }
 
 function normalizeTopic(value: string | string[] | undefined): string {
@@ -27,13 +30,19 @@ export default async function SentenceTranslationPage({
     redirect("/");
   }
 
-  const topic = normalizeTopic((await searchParams).topic) || "Random story";
-  const exercise = topic
-    ? await createSentenceExercise({
+  const params = await searchParams;
+  const topic = normalizeTopic(params.topic) || "Random story";
+  const action = normalizeTopic(params.action);
+  const shouldGenerateFromPrompt = action === "generate";
+  const exercise = shouldGenerateFromPrompt
+    ? await createSentenceExerciseFromPrompt({
         topic,
         userId: user.id,
       })
-    : null;
+    : await createSentenceExerciseFromRandomSentence({
+        topic,
+        userId: user.id,
+      });
 
   return (
     <main className={styles.page}>
@@ -47,8 +56,11 @@ export default async function SentenceTranslationPage({
             Topic
             <input defaultValue={topic} id="topic" name="topic" placeholder="Enter a topic" />
           </label>
-          <button className={styles.primaryButton} type="submit">
-            Generate sentence
+          <button className={styles.primaryButton} name="action" type="submit" value="generate">
+            Create sentence from prompt
+          </button>
+          <button className={styles.primaryButton} name="action" type="submit" value="random">
+            Pick random saved sentence
           </button>
         </form>
 
