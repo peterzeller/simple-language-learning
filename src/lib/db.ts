@@ -215,10 +215,20 @@ export async function ensureLearningTables(): Promise<void> {
     `.execute(db);
 
     await sql`
-      UPDATE sentence_translations
-      SET source_text = spanish_text
-      WHERE source_text IS NULL
-        AND spanish_text IS NOT NULL
+      DO $$
+      BEGIN
+        IF EXISTS (
+          SELECT 1
+          FROM information_schema.columns
+          WHERE table_name = 'sentence_translations'
+            AND column_name = 'spanish_text'
+        ) THEN
+          UPDATE sentence_translations
+          SET source_text = spanish_text
+          WHERE source_text IS NULL
+            AND spanish_text IS NOT NULL;
+        END IF;
+      END $$;
     `.execute(db);
 
     await sql`
