@@ -254,6 +254,24 @@ async function generateSpeechFromOpenAI(text: string): Promise<Buffer | null> {
   }
 }
 
+function asAudioBuffer(value: Buffer | Uint8Array | string): Buffer {
+  if (Buffer.isBuffer(value)) {
+    return value;
+  }
+
+  if (value instanceof Uint8Array) {
+    return Buffer.from(value);
+  }
+
+  const trimmed = value.trim();
+
+  if (trimmed.startsWith("\\x")) {
+    return Buffer.from(trimmed.slice(2), "hex");
+  }
+
+  return Buffer.from(trimmed, "base64");
+}
+
 function fallbackSourceSentence(topic: string, learningLanguage: string): string {
   const normalized = topic.trim().toLowerCase();
 
@@ -488,7 +506,7 @@ export async function getOrCreateSentenceAudioDataUrl(input: {
     .executeTakeFirst();
 
   if (existingAudio) {
-    return `data:audio/mpeg;base64,${Buffer.from(existingAudio.audio_mp3).toString("base64")}`;
+    return `data:audio/mpeg;base64,${asAudioBuffer(existingAudio.audio_mp3).toString("base64")}`;
   }
 
   const sentenceRow = await db
@@ -526,5 +544,5 @@ export async function getOrCreateSentenceAudioDataUrl(input: {
     return null;
   }
 
-  return `data:audio/mpeg;base64,${Buffer.from(audioRow.audio_mp3).toString("base64")}`;
+  return `data:audio/mpeg;base64,${asAudioBuffer(audioRow.audio_mp3).toString("base64")}`;
 }
