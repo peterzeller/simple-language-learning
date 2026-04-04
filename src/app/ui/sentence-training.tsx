@@ -152,7 +152,7 @@ export function SentenceTraining({ exercise }: SentenceTrainingProps) {
       audio.removeEventListener("pause", handlePause);
       audio.removeEventListener("play", handlePlay);
     };
-  }, [exercise.sentenceId, t]);
+  }, [exercise.sentenceId]);
 
   useEffect(() => {
     setAudioError(null);
