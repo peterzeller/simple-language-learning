@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, useTransition } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { useTranslations } from "next-intl";
 
 import {
@@ -34,6 +34,32 @@ export function SentenceTraining({ exercise }: SentenceTrainingProps) {
   const loadedSentenceIdRef = useRef<number | null>(null);
   const trackRef = useRef<HTMLButtonElement | null>(null);
   const restartTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const loadSentenceAudio = useCallback(async () => {
+    if (!audioRef.current || loadedSentenceIdRef.current === exercise.sentenceId) {
+      return Boolean(audioRef.current?.src);
+    }
+
+    setIsAudioPending(true);
+    const dataUrl = await getSentenceAudio({ sentenceId: exercise.sentenceId }).catch((error) => {
+      console.error("[sentence-training] Failed to load sentence audio", {
+        sentenceId: exercise.sentenceId,
+        error,
+      });
+      return null;
+    });
+    setIsAudioPending(false);
+
+    if (!dataUrl || !audioRef.current) {
+      setAudioError(t("sentence.audioLoadError"));
+      return false;
+    }
+
+    audioRef.current.src = dataUrl;
+    loadedSentenceIdRef.current = exercise.sentenceId;
+    setPlaybackProgress(0);
+    return true;
+  }, [exercise.sentenceId, t]);
 
   useEffect(() => {
     if (!audioRef.current) {
@@ -69,8 +95,11 @@ export function SentenceTraining({ exercise }: SentenceTrainingProps) {
 
         try {
           await audio.play();
-        } catch {
-          setAudioError(t("sentence.audioBlocked"));
+        } catch (error) {
+          console.warn("[sentence-training] Auto-replay was blocked", {
+            sentenceId: exercise.sentenceId,
+            error,
+          });
         }
       }, 2000);
     };
@@ -107,7 +136,14 @@ export function SentenceTraining({ exercise }: SentenceTrainingProps) {
       audio.removeEventListener("pause", handlePause);
       audio.removeEventListener("play", handlePlay);
     };
-  }, [t]);
+  }, [exercise.sentenceId, t]);
+
+  useEffect(() => {
+    setAudioError(null);
+    loadedSentenceIdRef.current = null;
+
+    void loadSentenceAudio();
+  }, [loadSentenceAudio]);
 
   const questionByIndex = useMemo(
     () => new Map(exercise.questions.map((question) => [question.tokenIndex, question])),
@@ -156,7 +192,11 @@ export function SentenceTraining({ exercise }: SentenceTrainingProps) {
 
       try {
         await audioRef.current.play();
-      } catch {
+      } catch (error) {
+        console.warn("[sentence-training] Playback from seek was blocked", {
+          sentenceId: exercise.sentenceId,
+          error,
+        });
         setAudioError(t("sentence.audioBlocked"));
       }
     }
@@ -180,23 +220,19 @@ export function SentenceTraining({ exercise }: SentenceTrainingProps) {
     }
 
     if (loadedSentenceIdRef.current !== exercise.sentenceId || !audioRef.current.src) {
-      setIsAudioPending(true);
-      const dataUrl = await getSentenceAudio({ sentenceId: exercise.sentenceId }).catch(() => null);
-      setIsAudioPending(false);
-
-      if (!dataUrl) {
-        setAudioError(t("sentence.audioLoadError"));
+      const audioLoaded = await loadSentenceAudio();
+      if (!audioLoaded) {
         return;
       }
-
-      audioRef.current.src = dataUrl;
-      loadedSentenceIdRef.current = exercise.sentenceId;
-      setPlaybackProgress(0);
     }
 
     try {
       await audioRef.current.play();
-    } catch {
+    } catch (error) {
+      console.warn("[sentence-training] User-triggered playback was blocked", {
+        sentenceId: exercise.sentenceId,
+        error,
+      });
       setAudioError(t("sentence.audioBlocked"));
     }
   };
