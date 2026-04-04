@@ -76,14 +76,3 @@ export async function recordSentenceReveal(input: { wordId: number }): Promise<v
     isCorrect: false,
   });
 }
-
-
-export async function getSentenceAudio(input: { sentenceId: number }): Promise<string | null> {
-  const user = await getCurrentUser();
-
-  if (!user) {
-    throw new Error("Unauthorized");
-  }
-
-  return `/api/sentence-audio/${input.sentenceId}`;
-}

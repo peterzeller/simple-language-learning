@@ -4,7 +4,6 @@ import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { useTranslations } from "next-intl";
 
 import {
-  getSentenceAudio,
   recordSentenceAnswer,
   recordSentenceReveal,
 } from "@/app/sentence-translation/actions";
@@ -36,7 +35,7 @@ export function SentenceTraining({ exercise }: SentenceTrainingProps) {
   const trackRef = useRef<HTMLButtonElement | null>(null);
   const restartTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const loadSentenceAudio = async () => {
+  const loadSentenceAudio = () => {
     if (!audioRef.current || loadedSentenceIdRef.current === exercise.sentenceId) {
       return Boolean(audioRef.current?.src);
     }
@@ -45,22 +44,9 @@ export function SentenceTraining({ exercise }: SentenceTrainingProps) {
       return false;
     }
 
-    loadingSentenceIdRef.current = exercise.sentenceId;
     setIsAudioPending(true);
-    const audioSource = await getSentenceAudio({ sentenceId: exercise.sentenceId }).catch((error) => {
-      console.error("[sentence-training] Failed to load sentence audio", {
-        sentenceId: exercise.sentenceId,
-        error,
-      });
-      return null;
-    });
-    setIsAudioPending(false);
-    loadingSentenceIdRef.current = null;
-
-    if (!audioSource || !audioRef.current) {
-      setAudioError(t("sentence.audioLoadError"));
-      return false;
-    }
+    loadingSentenceIdRef.current = exercise.sentenceId;
+    const audioSource = `/api/sentence-audio/${exercise.sentenceId}`;
 
     const resolvedSource = (() => {
       try {
@@ -76,6 +62,8 @@ export function SentenceTraining({ exercise }: SentenceTrainingProps) {
     })();
 
     if (!resolvedSource) {
+      setIsAudioPending(false);
+      loadingSentenceIdRef.current = null;
       setAudioError(t("sentence.audioLoadError"));
       return false;
     }
@@ -83,6 +71,8 @@ export function SentenceTraining({ exercise }: SentenceTrainingProps) {
     audioRef.current.src = resolvedSource;
     audioRef.current.load();
     loadedSentenceIdRef.current = exercise.sentenceId;
+    loadingSentenceIdRef.current = null;
+    setIsAudioPending(false);
     setPlaybackProgress(0);
     return true;
   };
@@ -169,7 +159,7 @@ export function SentenceTraining({ exercise }: SentenceTrainingProps) {
     loadedSentenceIdRef.current = null;
     loadingSentenceIdRef.current = null;
 
-    void loadSentenceAudio();
+    loadSentenceAudio();
   }, [exercise.sentenceId]);
 
   const questionByIndex = useMemo(
@@ -247,7 +237,7 @@ export function SentenceTraining({ exercise }: SentenceTrainingProps) {
     }
 
     if (loadedSentenceIdRef.current !== exercise.sentenceId || !audioRef.current.src) {
-      const audioLoaded = await loadSentenceAudio();
+      const audioLoaded = loadSentenceAudio();
       if (!audioLoaded) {
         return;
       }
