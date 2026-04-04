@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useTranslations } from "next-intl";
 
 import styles from "@/app/ui/theme-toggle.module.css";
 
@@ -29,6 +30,7 @@ function applyTheme(theme: Theme) {
 }
 
 export function ThemeToggle() {
+  const t = useTranslations();
   const [theme, setTheme] = useState<Theme>(getInitialTheme);
 
   useEffect(() => {
@@ -36,6 +38,8 @@ export function ThemeToggle() {
   }, [theme]);
 
   const nextTheme: Theme = theme === "dark" ? "light" : "dark";
+  const themeName = nextTheme === "dark" ? t("theme.dark") : t("theme.light");
+  const currentThemeName = theme === "dark" ? t("theme.light") : t("theme.dark");
 
   return (
     <button
@@ -45,11 +49,11 @@ export function ThemeToggle() {
         setTheme(nextTheme);
         window.localStorage.setItem("theme", nextTheme);
       }}
-      aria-label={`Switch to ${nextTheme} mode`}
-      title={`Switch to ${nextTheme} mode`}
+      aria-label={t("theme.switchTo", { theme: themeName.toLowerCase() })}
+      title={t("theme.switchTo", { theme: themeName.toLowerCase() })}
     >
       <span aria-hidden="true">{theme === "dark" ? "☀️" : "🌙"}</span>
-      <span>{theme === "dark" ? "Light" : "Dark"} mode</span>
+      <span>{t("theme.mode", { theme: currentThemeName })}</span>
     </button>
   );
 }

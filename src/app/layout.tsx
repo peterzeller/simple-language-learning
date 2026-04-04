@@ -1,7 +1,10 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 import Script from "next/script";
+import { NextIntlClientProvider } from "next-intl";
 
 import { ThemeToggle } from "@/app/ui/theme-toggle";
+import { getLocale, getMessages, getTranslations } from "@/i18n";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -22,19 +25,28 @@ const themeInitializationScript = `
 })();
 `;
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  const locale = await getLocale();
+  const messages = getMessages(locale);
+  const t = await getTranslations();
+
   return (
-    <html lang="en" suppressHydrationWarning>
+    <html lang={locale} suppressHydrationWarning>
       <body>
         <Script id="theme-init" strategy="beforeInteractive">
           {themeInitializationScript}
         </Script>
-        <ThemeToggle />
-        {children}
+        <NextIntlClientProvider locale={locale} messages={messages}>
+          <div style={{ display: "flex", gap: "0.75rem", justifyContent: "flex-end", padding: "1rem" }}>
+            <Link href="/settings">{t("common.settings")}</Link>
+            <ThemeToggle />
+          </div>
+          {children}
+        </NextIntlClientProvider>
       </body>
     </html>
   );

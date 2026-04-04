@@ -22,6 +22,11 @@ interface AuthFormProps {
   alternateHref: string;
   alternateLabel: string;
   alternateText: string;
+  appName: string;
+  emailLabel: string;
+  passwordLabel: string;
+  workingLabel: string;
+  isRegister: boolean;
 }
 
 export function AuthForm({
@@ -32,6 +37,11 @@ export function AuthForm({
   alternateHref,
   alternateLabel,
   alternateText,
+  appName,
+  emailLabel,
+  passwordLabel,
+  workingLabel,
+  isRegister,
 }: AuthFormProps) {
   const [state, formAction, pending] = useActionState(
     action,
@@ -41,23 +51,21 @@ export function AuthForm({
   return (
     <section className={styles.card}>
       <div className={styles.copy}>
-        <span className={styles.eyebrow}>Simple Language Learning</span>
+        <span className={styles.eyebrow}>{appName}</span>
         <h1>{title}</h1>
         <p>{description}</p>
       </div>
       <form className={styles.form} action={formAction}>
         <label className={styles.field}>
-          <span>Email</span>
+          <span>{emailLabel}</span>
           <input type="email" name="email" autoComplete="email" required />
         </label>
         <label className={styles.field}>
-          <span>Password</span>
+          <span>{passwordLabel}</span>
           <input
             type="password"
             name="password"
-            autoComplete={
-              submitLabel === "Create account" ? "new-password" : "current-password"
-            }
+            autoComplete={isRegister ? "new-password" : "current-password"}
             minLength={8}
             required
           />
@@ -68,7 +76,7 @@ export function AuthForm({
           </p>
         ) : null}
         <button className={styles.primaryButton} type="submit" disabled={pending}>
-          {pending ? "Working..." : submitLabel}
+          {pending ? workingLabel : submitLabel}
         </button>
       </form>
       <p className={styles.helperText}>

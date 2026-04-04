@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
+import { useTranslations } from "next-intl";
 
 import styles from "@/app/auth.module.css";
 import {
@@ -15,17 +16,15 @@ interface SentenceTranslationWorkspaceProps {
   initialTopic: string;
 }
 
-export function SentenceTranslationWorkspace({
-  initialExercise,
-  initialTopic,
-}: SentenceTranslationWorkspaceProps) {
+export function SentenceTranslationWorkspace({ initialExercise, initialTopic }: SentenceTranslationWorkspaceProps) {
+  const t = useTranslations();
   const [topic, setTopic] = useState(initialTopic);
   const [exercise, setExercise] = useState(initialExercise);
   const [isPending, startTransition] = useTransition();
 
   const fetchExercise = (mode: "prompt" | "random") => {
     startTransition(async () => {
-      const normalizedTopic = topic.trim() || "Random story";
+      const normalizedTopic = topic.trim() || t("sentence.defaultTopic");
       const nextExercise =
         mode === "prompt"
           ? await createSentenceFromPrompt({ topic: normalizedTopic })
@@ -38,40 +37,30 @@ export function SentenceTranslationWorkspace({
     <>
       <div className={styles.topicForm}>
         <label className={styles.field} htmlFor="topic">
-          Topic
+          {t("sentence.topic")}
           <input
             id="topic"
             name="topic"
             onChange={(event) => setTopic(event.target.value)}
-            placeholder="Enter a topic"
+            placeholder={t("sentence.enterTopic")}
             value={topic}
           />
         </label>
 
         <div className={styles.topicActions}>
-          <button
-            className={styles.primaryButton}
-            disabled={isPending}
-            onClick={() => fetchExercise("prompt")}
-            type="button"
-          >
+          <button className={styles.primaryButton} disabled={isPending} onClick={() => fetchExercise("prompt")} type="button">
             <span className={styles.buttonContent}>
               {isPending && <span aria-hidden="true" className={styles.inlineSpinner} />}
-              Create sentence from prompt
+              {t("sentence.createFromPrompt")}
             </span>
           </button>
-          <button
-            className={styles.primaryButton}
-            disabled={isPending}
-            onClick={() => fetchExercise("random")}
-            type="button"
-          >
-            Pick random saved sentence
+          <button className={styles.primaryButton} disabled={isPending} onClick={() => fetchExercise("random")} type="button">
+            {t("sentence.pickRandom")}
           </button>
         </div>
       </div>
 
-      {isPending && <p className={styles.helperText}>Loading sentence...</p>}
+      {isPending && <p className={styles.helperText}>{t("sentence.loading")}</p>}
       <SentenceTraining exercise={exercise} key={exercise.sentenceId} />
     </>
   );

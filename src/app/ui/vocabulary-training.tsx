@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
+import { useTranslations } from "next-intl";
 
 import { getNextVocabularyQuestion, submitVocabularyAnswer } from "@/app/vocabulary-training/actions";
 import type { VocabularyQuestion } from "@/lib/learning";
@@ -13,6 +14,7 @@ interface VocabularyTrainingProps {
 type FeedbackState = "correct" | "wrong" | null;
 
 export function VocabularyTraining({ initialQuestion }: VocabularyTrainingProps) {
+  const t = useTranslations();
   const [question, setQuestion] = useState<VocabularyQuestion | null>(initialQuestion);
   const [selectedOption, setSelectedOption] = useState<string | null>(null);
   const [feedback, setFeedback] = useState<FeedbackState>(null);
@@ -28,14 +30,14 @@ export function VocabularyTraining({ initialQuestion }: VocabularyTrainingProps)
   };
 
   if (!question) {
-    return <p className={styles.helperText}>Add more translated words first to start this game.</p>;
+    return <p className={styles.helperText}>{t("vocabulary.addWords")}</p>;
   }
 
   return (
     <div className={styles.trainingLayout}>
       <div className={styles.vocabularyPrompt}>
         <h2>{question.sourceWord}</h2>
-        <p>Pick the correct translation.</p>
+        <p>{t("vocabulary.pickCorrect")}</p>
       </div>
 
       <div className={styles.optionsGrid}>
@@ -44,17 +46,9 @@ export function VocabularyTraining({ initialQuestion }: VocabularyTrainingProps)
           const isCorrectOption = option === question.correctTranslation;
           const optionClassName = [styles.optionButton];
 
-          if (isSelected && feedback === "correct") {
-            optionClassName.push(styles.optionCorrect);
-          }
-
-          if (isSelected && feedback === "wrong") {
-            optionClassName.push(styles.optionWrong);
-          }
-
-          if (feedback === "wrong" && !isSelected && isCorrectOption) {
-            optionClassName.push(styles.optionCorrect);
-          }
+          if (isSelected && feedback === "correct") optionClassName.push(styles.optionCorrect);
+          if (isSelected && feedback === "wrong") optionClassName.push(styles.optionWrong);
+          if (feedback === "wrong" && !isSelected && isCorrectOption) optionClassName.push(styles.optionCorrect);
 
           return (
             <button
@@ -62,20 +56,14 @@ export function VocabularyTraining({ initialQuestion }: VocabularyTrainingProps)
               disabled={isPending || feedback !== null}
               key={option}
               onClick={() => {
-                if (isPending || feedback !== null) {
-                  return;
-                }
+                if (isPending || feedback !== null) return;
 
                 const isCorrect = option === question.correctTranslation;
                 setSelectedOption(option);
                 setFeedback(isCorrect ? "correct" : "wrong");
 
                 startTransition(async () => {
-                  const nextQuestion = await submitVocabularyAnswer({
-                    wordId: question.wordId,
-                    isCorrect,
-                  });
-
+                  const nextQuestion = await submitVocabularyAnswer({ wordId: question.wordId, isCorrect });
                   if (isCorrect) {
                     window.setTimeout(() => {
                       setQuestion(nextQuestion);
@@ -93,27 +81,13 @@ export function VocabularyTraining({ initialQuestion }: VocabularyTrainingProps)
         })}
       </div>
 
-      <button
-        className={styles.secondaryButton}
-        disabled={isPending || feedback === "wrong"}
-        onClick={() => {
-          loadNextQuestion();
-        }}
-        type="button"
-      >
-        Skip
+      <button className={styles.secondaryButton} disabled={isPending || feedback === "wrong"} onClick={loadNextQuestion} type="button">
+        {t("vocabulary.skip")}
       </button>
 
       {feedback === "wrong" && (
-        <button
-          className={styles.primaryButton}
-          disabled={isPending}
-          onClick={() => {
-            loadNextQuestion();
-          }}
-          type="button"
-        >
-          Next question
+        <button className={styles.primaryButton} disabled={isPending} onClick={loadNextQuestion} type="button">
+          {t("vocabulary.next")}
         </button>
       )}
     </div>
