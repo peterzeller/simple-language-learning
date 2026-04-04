@@ -26,7 +26,7 @@ export default async function RegisterPage() {
         isRegister
       />
       <Link href="/" hidden>
-        Back to login
+        {t("register.backToLogin")}
       </Link>
     </main>
   );

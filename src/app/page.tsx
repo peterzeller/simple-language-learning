@@ -86,7 +86,7 @@ export default async function Home() {
         isRegister={false}
       />
       <Link href="/register" hidden>
-        Register
+        {t("home.createAccount")}
       </Link>
     </main>
   );

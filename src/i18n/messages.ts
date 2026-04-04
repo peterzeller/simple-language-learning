@@ -46,6 +46,7 @@ export const messages = {
       description: "Start with just an email address and password. We’ll keep the rest lightweight.",
       alternateText: "Already registered?",
       submit: "Create account",
+      backToLogin: "Back to login",
     },
     auth: {
       email: "Email",
@@ -135,6 +136,7 @@ export const messages = {
       description: "Starte nur mit E-Mail-Adresse und Passwort. Der Rest bleibt bewusst einfach.",
       alternateText: "Schon registriert?",
       submit: "Konto erstellen",
+      backToLogin: "Zur Anmeldung",
     },
     auth: {
       email: "E-Mail",
