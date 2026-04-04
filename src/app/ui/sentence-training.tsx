@@ -34,6 +34,21 @@ export function SentenceTraining({ exercise }: SentenceTrainingProps) {
   const loadingSentenceIdRef = useRef<number | null>(null);
   const trackRef = useRef<HTMLButtonElement | null>(null);
   const restartTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const logPlaybackError = (context: string, error: unknown) => {
+    if (error instanceof DOMException) {
+      console.warn(`[sentence-training] ${context}`, {
+        sentenceId: exercise.sentenceId,
+        name: error.name,
+        message: error.message,
+      });
+      return;
+    }
+
+    console.warn(`[sentence-training] ${context}`, {
+      sentenceId: exercise.sentenceId,
+      error,
+    });
+  };
 
   const loadSentenceAudio = () => {
     if (!audioRef.current || loadedSentenceIdRef.current === exercise.sentenceId) {
@@ -84,7 +99,7 @@ export function SentenceTraining({ exercise }: SentenceTrainingProps) {
 
     const audio = audioRef.current;
 
-    const handleTimeUpdate = () => {
+    const syncPlaybackProgress = () => {
       if (!Number.isFinite(audio.duration) || audio.duration <= 0) {
         setPlaybackProgress(0);
         return;
@@ -112,10 +127,7 @@ export function SentenceTraining({ exercise }: SentenceTrainingProps) {
         try {
           await audio.play();
         } catch (error) {
-          console.warn("[sentence-training] Auto-replay was blocked", {
-            sentenceId: exercise.sentenceId,
-            error,
-          });
+          logPlaybackError("Auto-replay failed", error);
         }
       }, 2000);
     };
@@ -131,9 +143,13 @@ export function SentenceTraining({ exercise }: SentenceTrainingProps) {
 
     const handlePlay = () => {
       setIsPlaying(true);
+      syncPlaybackProgress();
     };
 
-    audio.addEventListener("timeupdate", handleTimeUpdate);
+    audio.addEventListener("timeupdate", syncPlaybackProgress);
+    audio.addEventListener("loadedmetadata", syncPlaybackProgress);
+    audio.addEventListener("durationchange", syncPlaybackProgress);
+    audio.addEventListener("seeked", syncPlaybackProgress);
     audio.addEventListener("ended", handleEnded);
     audio.addEventListener("pause", handlePause);
     audio.addEventListener("play", handlePlay);
@@ -147,7 +163,10 @@ export function SentenceTraining({ exercise }: SentenceTrainingProps) {
       audio.pause();
       audio.currentTime = 0;
       audio.src = "";
-      audio.removeEventListener("timeupdate", handleTimeUpdate);
+      audio.removeEventListener("timeupdate", syncPlaybackProgress);
+      audio.removeEventListener("loadedmetadata", syncPlaybackProgress);
+      audio.removeEventListener("durationchange", syncPlaybackProgress);
+      audio.removeEventListener("seeked", syncPlaybackProgress);
       audio.removeEventListener("ended", handleEnded);
       audio.removeEventListener("pause", handlePause);
       audio.removeEventListener("play", handlePlay);
@@ -191,7 +210,7 @@ export function SentenceTraining({ exercise }: SentenceTrainingProps) {
     }
 
     const offsetY = Math.min(Math.max(event.clientY - bounds.top, 0), bounds.height);
-    const ratio = Math.min(1, Math.max(0, offsetY / bounds.height));
+    const ratio = Math.min(1, Math.max(0, 1 - (offsetY / bounds.height)));
     const nextTime = ratio * duration;
 
     if (!Number.isFinite(nextTime)) {
@@ -210,10 +229,7 @@ export function SentenceTraining({ exercise }: SentenceTrainingProps) {
       try {
         await audioRef.current.play();
       } catch (error) {
-        console.warn("[sentence-training] Playback from seek was blocked", {
-          sentenceId: exercise.sentenceId,
-          error,
-        });
+        logPlaybackError("Playback from seek failed", error);
         setAudioError(t("sentence.audioBlocked"));
       }
     }
@@ -246,10 +262,7 @@ export function SentenceTraining({ exercise }: SentenceTrainingProps) {
     try {
       await audioRef.current.play();
     } catch (error) {
-      console.warn("[sentence-training] User-triggered playback was blocked", {
-        sentenceId: exercise.sentenceId,
-        error,
-      });
+      logPlaybackError("User-triggered playback failed", error);
       setAudioError(t("sentence.audioBlocked"));
     }
   };
