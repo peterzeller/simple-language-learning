@@ -398,6 +398,15 @@ async function createSentenceExerciseFromRawSentence(input: {
   return { sentenceId: input.sentenceId, tokens, questions };
 }
 
+
+async function warmSentenceAudioCache(sentenceId: number): Promise<void> {
+  try {
+    await getOrCreateSentenceAudioDataUrl({ sentenceId });
+  } catch (error) {
+    console.warn("Failed to warm sentence audio cache:", error);
+  }
+}
+
 export async function createSentenceExerciseFromPrompt(input: {
   topic: string;
   userId: number;
@@ -411,11 +420,15 @@ export async function createSentenceExerciseFromPrompt(input: {
     spanishText,
   });
 
-  return createSentenceExerciseFromRawSentence({
+  const exercise = await createSentenceExerciseFromRawSentence({
     sentenceId,
     sentence: rawSentence,
     userId: input.userId,
   });
+
+  await warmSentenceAudioCache(sentenceId);
+
+  return exercise;
 }
 
 export async function createSentenceExerciseFromRandomSentence(input: {
@@ -428,11 +441,15 @@ export async function createSentenceExerciseFromRandomSentence(input: {
     return createSentenceExerciseFromPrompt(input);
   }
 
-  return createSentenceExerciseFromRawSentence({
+  const exercise = await createSentenceExerciseFromRawSentence({
     sentenceId: savedSentence.id,
     sentence: savedSentence.rawSentence,
     userId: input.userId,
   });
+
+  await warmSentenceAudioCache(savedSentence.id);
+
+  return exercise;
 }
 
 export async function getOrCreateSentenceAudioDataUrl(input: {
