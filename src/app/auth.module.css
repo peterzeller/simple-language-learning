@@ -249,12 +249,66 @@
   gap: 10px;
 }
 
+
+
+.sentencePlaybackLayout {
+  display: flex;
+  align-items: stretch;
+  gap: 12px;
+}
+
+.playbackRail {
+  width: 36px;
+  border: 1px solid var(--border-muted);
+  border-radius: 12px;
+  background: var(--surface-elevated);
+  padding: 8px 6px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+
+.playbackButton {
+  width: 24px;
+  height: 24px;
+  border-radius: 999px;
+  border: 1px solid var(--border-strong);
+  background: var(--surface-muted);
+  color: var(--text-primary);
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.playbackTrack {
+  position: relative;
+  flex: 1;
+  width: 8px;
+  border: 0;
+  padding: 0;
+  border-radius: 999px;
+  background: var(--surface-muted);
+  overflow: hidden;
+  cursor: pointer;
+}
+
+.playbackProgress {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  background: var(--accent);
+}
+
 .trainingLayout {
   display: grid;
   gap: 20px;
 }
 
 .sentenceLine {
+  flex: 1;
+  margin-top: 40px;
   display: flex;
   flex-wrap: wrap;
   gap: 8px;

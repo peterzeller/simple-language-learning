@@ -1,8 +1,12 @@
 "use client";
 
-import { useMemo, useState, useTransition } from "react";
+import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 
-import { recordSentenceAnswer, recordSentenceReveal } from "@/app/sentence-translation/actions";
+import {
+  getSentenceAudio,
+  recordSentenceAnswer,
+  recordSentenceReveal,
+} from "@/app/sentence-translation/actions";
 import type { SentenceExercise } from "@/lib/sentence-translation";
 import styles from "@/app/auth.module.css";
 
@@ -20,6 +24,88 @@ export function SentenceTraining({ exercise }: SentenceTrainingProps) {
   const [answers, setAnswers] = useState<Record<number, AnswerState>>({});
   const [activeQuestionIndex, setActiveQuestionIndex] = useState<number | null>(null);
   const [isPending, startTransition] = useTransition();
+  const [isAudioPending, setIsAudioPending] = useState(false);
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [playbackProgress, setPlaybackProgress] = useState(0);
+  const [audioError, setAudioError] = useState<string | null>(null);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const loadedSentenceIdRef = useRef<number | null>(null);
+  const trackRef = useRef<HTMLButtonElement | null>(null);
+  const restartTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    if (!audioRef.current) {
+      audioRef.current = new Audio();
+    }
+
+    const audio = audioRef.current;
+
+    const handleTimeUpdate = () => {
+      if (!Number.isFinite(audio.duration) || audio.duration <= 0) {
+        setPlaybackProgress(0);
+        return;
+      }
+
+      setPlaybackProgress(Math.min(1, audio.currentTime / audio.duration));
+    };
+
+    const handleEnded = () => {
+      setIsPlaying(false);
+      setPlaybackProgress(1);
+
+      if (restartTimeoutRef.current) {
+        clearTimeout(restartTimeoutRef.current);
+      }
+
+      restartTimeoutRef.current = setTimeout(async () => {
+        if (!audio.src) {
+          return;
+        }
+
+        audio.currentTime = 0;
+        setPlaybackProgress(0);
+
+        try {
+          await audio.play();
+        } catch {
+          setAudioError("Audio playback was blocked. Press play again to retry.");
+        }
+      }, 2000);
+    };
+
+    const handlePause = () => {
+      setIsPlaying(false);
+
+      if (restartTimeoutRef.current) {
+        clearTimeout(restartTimeoutRef.current);
+        restartTimeoutRef.current = null;
+      }
+    };
+
+    const handlePlay = () => {
+      setIsPlaying(true);
+    };
+
+    audio.addEventListener("timeupdate", handleTimeUpdate);
+    audio.addEventListener("ended", handleEnded);
+    audio.addEventListener("pause", handlePause);
+    audio.addEventListener("play", handlePlay);
+
+    return () => {
+      if (restartTimeoutRef.current) {
+        clearTimeout(restartTimeoutRef.current);
+        restartTimeoutRef.current = null;
+      }
+
+      audio.pause();
+      audio.currentTime = 0;
+      audio.src = "";
+      audio.removeEventListener("timeupdate", handleTimeUpdate);
+      audio.removeEventListener("ended", handleEnded);
+      audio.removeEventListener("pause", handlePause);
+      audio.removeEventListener("play", handlePlay);
+    };
+  }, []);
 
   const questionByIndex = useMemo(
     () => new Map(exercise.questions.map((question) => [question.tokenIndex, question])),
@@ -31,61 +117,164 @@ export function SentenceTraining({ exercise }: SentenceTrainingProps) {
   const activeToken =
     activeQuestionIndex !== null ? exercise.tokens[activeQuestionIndex] : undefined;
 
+  const seekFromTrackClick = async (event: React.MouseEvent<HTMLButtonElement>) => {
+    if (!audioRef.current || !trackRef.current) {
+      return;
+    }
+
+    const duration = audioRef.current.duration;
+
+    if (!Number.isFinite(duration) || duration <= 0) {
+      return;
+    }
+
+    const wasPlaying = isPlaying;
+    const bounds = trackRef.current.getBoundingClientRect();
+
+    if (!Number.isFinite(bounds.height) || bounds.height <= 0) {
+      return;
+    }
+
+    const offsetY = Math.min(Math.max(event.clientY - bounds.top, 0), bounds.height);
+    const ratio = Math.min(1, Math.max(0, offsetY / bounds.height));
+    const nextTime = ratio * duration;
+
+    if (!Number.isFinite(nextTime)) {
+      return;
+    }
+
+    audioRef.current.currentTime = nextTime;
+    setPlaybackProgress(ratio);
+
+    if (!wasPlaying) {
+      if (restartTimeoutRef.current) {
+        clearTimeout(restartTimeoutRef.current);
+        restartTimeoutRef.current = null;
+      }
+
+      try {
+        await audioRef.current.play();
+      } catch {
+        setAudioError("Audio playback was blocked. Press play again to retry.");
+      }
+    }
+  };
+
+  const togglePlayback = async () => {
+    setAudioError(null);
+
+    if (!audioRef.current) {
+      return;
+    }
+
+    if (restartTimeoutRef.current) {
+      clearTimeout(restartTimeoutRef.current);
+      restartTimeoutRef.current = null;
+    }
+
+    if (isPlaying) {
+      audioRef.current.pause();
+      return;
+    }
+
+    if (loadedSentenceIdRef.current !== exercise.sentenceId || !audioRef.current.src) {
+      setIsAudioPending(true);
+      const dataUrl = await getSentenceAudio({ sentenceId: exercise.sentenceId }).catch(() => null);
+      setIsAudioPending(false);
+
+      if (!dataUrl) {
+        setAudioError("Unable to load narration audio for this sentence right now.");
+        return;
+      }
+
+      audioRef.current.src = dataUrl;
+      loadedSentenceIdRef.current = exercise.sentenceId;
+      setPlaybackProgress(0);
+    }
+
+    try {
+      await audioRef.current.play();
+    } catch {
+      setAudioError("Audio playback was blocked. Press play again to retry.");
+    }
+  };
+
   return (
     <div className={styles.trainingLayout}>
-      <div className={styles.sentenceLine}>
-        {exercise.tokens.map((token, index) => {
-          const question = questionByIndex.get(index);
-          const answer = answers[index];
-          const shouldReveal = !token.isQuestion && (token.revealByDefault || revealedWords[index]);
+      {audioError && <p className={styles.helperText}>{audioError}</p>}
 
-          const cardClassName = [styles.wordCard];
+      <div className={styles.sentencePlaybackLayout}>
+        <div className={styles.playbackRail}>
+          <button
+            aria-label={isPlaying ? "Pause narration" : "Play narration"}
+            className={styles.playbackButton}
+            disabled={isAudioPending}
+            onClick={() => {
+              void togglePlayback();
+            }}
+            type="button"
+          >
+            {isAudioPending ? "…" : isPlaying ? "❚❚" : "▶"}
+          </button>
+          <button className={styles.playbackTrack} onClick={seekFromTrackClick} ref={trackRef} type="button">
+            <div className={styles.playbackProgress} style={{ height: `${playbackProgress * 100}%` }} />
+          </button>
+        </div>
 
-          if (question && !answer) {
-            cardClassName.push(styles.wordCardQuestion);
-          }
+        <div className={styles.sentenceLine}>
+          {exercise.tokens.map((token, index) => {
+            const question = questionByIndex.get(index);
+            const answer = answers[index];
+            const shouldReveal = !token.isQuestion && (token.revealByDefault || revealedWords[index]);
 
-          if (answer?.isCorrect) {
-            cardClassName.push(styles.wordCardCorrect);
-          }
+            const cardClassName = [styles.wordCard];
 
-          if (answer && !answer.isCorrect) {
-            cardClassName.push(styles.wordCardWrong);
-          }
+            if (question && !answer) {
+              cardClassName.push(styles.wordCardQuestion);
+            }
 
-          return (
-            <button
-              className={cardClassName.join(" ")}
-              key={`${token.source}-${index}`}
-              onClick={() => {
-                if (question) {
-                  setActiveQuestionIndex(index);
-                  return;
-                }
+            if (answer?.isCorrect) {
+              cardClassName.push(styles.wordCardCorrect);
+            }
 
-                let shouldRecordReveal = false;
-                setRevealedWords((prev) => {
-                  const currentlyVisible = token.revealByDefault || Boolean(prev[index]);
-                  const nextIsVisible = !currentlyVisible;
-                  shouldRecordReveal = !currentlyVisible && nextIsVisible;
-                  return { ...prev, [index]: nextIsVisible };
-                });
+            if (answer && !answer.isCorrect) {
+              cardClassName.push(styles.wordCardWrong);
+            }
 
-                if (shouldRecordReveal) {
-                  startTransition(async () => {
-                    await recordSentenceReveal({ wordId: token.wordId });
+            return (
+              <button
+                className={cardClassName.join(" ")}
+                key={`${token.source}-${index}`}
+                onClick={() => {
+                  if (question) {
+                    setActiveQuestionIndex(index);
+                    return;
+                  }
+
+                  let shouldRecordReveal = false;
+                  setRevealedWords((prev) => {
+                    const currentlyVisible = token.revealByDefault || Boolean(prev[index]);
+                    const nextIsVisible = !currentlyVisible;
+                    shouldRecordReveal = !currentlyVisible && nextIsVisible;
+                    return { ...prev, [index]: nextIsVisible };
                   });
-                }
-              }}
-              type="button"
-            >
-              <span>{token.source}</span>
-              <small className={styles.wordTranslation}>
-                {answer || shouldReveal ? token.target : ""}
-              </small>
-            </button>
-          );
-        })}
+
+                  if (shouldRecordReveal) {
+                    startTransition(async () => {
+                      await recordSentenceReveal({ wordId: token.wordId });
+                    });
+                  }
+                }}
+                type="button"
+              >
+                <span>{token.source}</span>
+                <small className={styles.wordTranslation}>
+                  {answer || shouldReveal ? token.target : ""}
+                </small>
+              </button>
+            );
+          })}
+        </div>
       </div>
 
       {activeQuestion && activeToken && activeQuestionIndex !== null && (

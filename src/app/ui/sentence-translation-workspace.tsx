@@ -72,7 +72,7 @@ export function SentenceTranslationWorkspace({
       </div>
 
       {isPending && <p className={styles.helperText}>Loading sentence...</p>}
-      {!isPending && exercise && <SentenceTraining exercise={exercise} />}
+      <SentenceTraining exercise={exercise} key={exercise.sentenceId} />
     </>
   );
 }

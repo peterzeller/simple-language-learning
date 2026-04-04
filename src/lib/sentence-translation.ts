@@ -33,6 +33,7 @@ export interface SentenceQuestion {
 }
 
 export interface SentenceExercise {
+  sentenceId: number;
   tokens: SentenceToken[];
   questions: SentenceQuestion[];
 }
@@ -40,34 +41,44 @@ export interface SentenceExercise {
 async function saveGeneratedSentence(input: {
   topic: string;
   rawSentence: string;
-}): Promise<void> {
+  spanishText: string;
+}): Promise<number> {
   await ensureLearningTables();
   const db = getDb();
 
-  await db
+  const row = await db
     .insertInto("sentence_translations")
     .values({
       topic: input.topic,
       raw_sentence: input.rawSentence,
+      spanish_text: input.spanishText,
     })
-    .execute();
+    .returning("id")
+    .executeTakeFirstOrThrow();
+
+  return row.id;
 }
 
-async function getRandomSavedSentence(): Promise<string | null> {
+async function getRandomSavedSentence(): Promise<{ id: number; rawSentence: string } | null> {
   await ensureLearningTables();
   const db = getDb();
 
   const row = await db
     .selectFrom("sentence_translations")
-    .select("raw_sentence")
+    .select(["id", "raw_sentence"])
+    .where("spanish_text", "is not", null)
     .orderBy(sql`RANDOM()`)
     .limit(1)
     .executeTakeFirst();
 
-  return row?.raw_sentence ?? null;
+  if (!row) {
+    return null;
+  }
+
+  return { id: row.id, rawSentence: row.raw_sentence };
 }
 
-async function generateFromOpenAI(topic: string): Promise<string | null> {
+async function generateFromOpenAI(topic: string): Promise<{ rawSentence: string; spanishText: string } | null> {
   const apiKey = process.env.OPEN_AI_KEY;
 
   if (!apiKey) {
@@ -186,11 +197,66 @@ async function generateFromOpenAI(topic: string): Promise<string | null> {
       return null;
     }
 
-    return sentence;
+    return { rawSentence: sentence, spanishText };
   } catch (e) {
     console.error("Error generating sentence from OpenAI:", e);
     return null;
   }
+}
+
+async function generateSpeechFromOpenAI(text: string): Promise<Buffer | null> {
+  const apiKey = process.env.OPEN_AI_KEY;
+
+  if (!apiKey) {
+    return null;
+  }
+
+  try {
+    const response = await fetch("https://api.openai.com/v1/audio/speech", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({
+        model: "gpt-4o-mini-tts",
+        voice: "alloy",
+        format: "mp3",
+        input: text,
+      }),
+      cache: "no-store",
+    });
+
+    if (!response.ok) {
+      return null;
+    }
+
+    const arrayBuffer = await response.arrayBuffer();
+
+    if (arrayBuffer.byteLength === 0) {
+      return null;
+    }
+
+    return Buffer.from(arrayBuffer);
+  } catch (error) {
+    console.error("Error generating TTS audio from OpenAI:", error);
+    return null;
+  }
+}
+
+
+function fallbackSpanishSentence(topic: string): string {
+  const normalized = topic.trim().toLowerCase();
+
+  if (normalized === "travel") {
+    return "Me gusta viajar en tren.";
+  }
+
+  if (normalized === "food") {
+    return "Nosotros comemos sopa cada noche.";
+  }
+
+  return "¿Cómo estuvo tu fin de semana?";
 }
 
 function fallbackSentence(topic: string): string {
@@ -254,6 +320,7 @@ function getQuestionIndexesByKnowledgeScore(input: {
 }
 
 async function createSentenceExerciseFromRawSentence(input: {
+  sentenceId: number;
   sentence: string;
   userId: number;
 }): Promise<SentenceExercise> {
@@ -328,7 +395,16 @@ async function createSentenceExerciseFromRawSentence(input: {
     };
   });
 
-  return { tokens, questions };
+  return { sentenceId: input.sentenceId, tokens, questions };
+}
+
+
+async function warmSentenceAudioCache(sentenceId: number): Promise<void> {
+  try {
+    await getOrCreateSentenceAudioDataUrl({ sentenceId });
+  } catch (error) {
+    console.warn("Failed to warm sentence audio cache:", error);
+  }
 }
 
 export async function createSentenceExerciseFromPrompt(input: {
@@ -336,30 +412,100 @@ export async function createSentenceExerciseFromPrompt(input: {
   userId: number;
 }): Promise<SentenceExercise> {
   const aiSentence = await generateFromOpenAI(input.topic);
-  const sentence = aiSentence ?? fallbackSentence(input.topic);
-  await saveGeneratedSentence({
+  const rawSentence = aiSentence?.rawSentence ?? fallbackSentence(input.topic);
+  const spanishText = aiSentence?.spanishText ?? fallbackSpanishSentence(input.topic);
+  const sentenceId = await saveGeneratedSentence({
     topic: input.topic,
-    rawSentence: sentence,
+    rawSentence,
+    spanishText,
   });
 
-  return createSentenceExerciseFromRawSentence({
-    sentence,
+  const exercise = await createSentenceExerciseFromRawSentence({
+    sentenceId,
+    sentence: rawSentence,
     userId: input.userId,
   });
+
+  await warmSentenceAudioCache(sentenceId);
+
+  return exercise;
 }
 
 export async function createSentenceExerciseFromRandomSentence(input: {
   topic: string;
   userId: number;
 }): Promise<SentenceExercise> {
-  const sentence = await getRandomSavedSentence();
+  const savedSentence = await getRandomSavedSentence();
 
-  if (!sentence) {
+  if (!savedSentence) {
     return createSentenceExerciseFromPrompt(input);
   }
 
-  return createSentenceExerciseFromRawSentence({
-    sentence,
+  const exercise = await createSentenceExerciseFromRawSentence({
+    sentenceId: savedSentence.id,
+    sentence: savedSentence.rawSentence,
     userId: input.userId,
   });
+
+  await warmSentenceAudioCache(savedSentence.id);
+
+  return exercise;
+}
+
+export async function getOrCreateSentenceAudioDataUrl(input: {
+  sentenceId: number;
+}): Promise<string | null> {
+  await ensureLearningTables();
+  const db = getDb();
+
+  const existingAudio = await db
+    .selectFrom("sentence_audio")
+    .select("audio_mp3")
+    .where("sentence_translation_id", "=", input.sentenceId)
+    .executeTakeFirst();
+
+  if (existingAudio) {
+    return `data:audio/mpeg;base64,${Buffer.from(existingAudio.audio_mp3).toString("base64")}`;
+  }
+
+  const sentenceRow = await db
+    .selectFrom("sentence_translations")
+    .select("spanish_text")
+    .where("id", "=", input.sentenceId)
+    .executeTakeFirst();
+
+  if (!sentenceRow) {
+    return null;
+  }
+
+  if (!sentenceRow.spanish_text?.trim()) {
+    return null;
+  }
+
+  const ttsAudio = await generateSpeechFromOpenAI(sentenceRow.spanish_text);
+
+  if (!ttsAudio) {
+    return null;
+  }
+
+  await db
+    .insertInto("sentence_audio")
+    .values({
+      sentence_translation_id: input.sentenceId,
+      audio_mp3: ttsAudio,
+    })
+    .onConflict((oc) => oc.column("sentence_translation_id").doNothing())
+    .execute();
+
+  const audioRow = await db
+    .selectFrom("sentence_audio")
+    .select("audio_mp3")
+    .where("sentence_translation_id", "=", input.sentenceId)
+    .executeTakeFirst();
+
+  if (!audioRow) {
+    return null;
+  }
+
+  return `data:audio/mpeg;base64,${Buffer.from(audioRow.audio_mp3).toString("base64")}`;
 }
