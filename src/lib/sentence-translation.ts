@@ -272,6 +272,46 @@ function asAudioBuffer(value: Buffer | Uint8Array | string): Buffer {
   return Buffer.from(trimmed, "base64");
 }
 
+function detectAudioMimeType(audio: Buffer): string {
+  if (audio.length >= 3 && audio[0] === 0x49 && audio[1] === 0x44 && audio[2] === 0x33) {
+    return "audio/mpeg";
+  }
+
+  if (audio.length >= 2 && audio[0] === 0xff && (audio[1] & 0xe0) === 0xe0) {
+    return "audio/mpeg";
+  }
+
+  if (
+    audio.length >= 12
+    && audio.subarray(0, 4).toString("ascii") === "RIFF"
+    && audio.subarray(8, 12).toString("ascii") === "WAVE"
+  ) {
+    return "audio/wav";
+  }
+
+  if (audio.length >= 4 && audio.subarray(0, 4).toString("ascii") === "OggS") {
+    return "audio/ogg";
+  }
+
+  if (audio.length >= 8 && audio.subarray(4, 8).toString("ascii") === "ftyp") {
+    return "audio/mp4";
+  }
+
+  console.warn("Unknown audio format signature while building data URL.", {
+    headerHex: audio.subarray(0, 16).toString("hex"),
+    byteLength: audio.length,
+  });
+  return "audio/mpeg";
+}
+
+function toAudioDataUrl(value: Buffer | Uint8Array | string): string {
+  const audioBuffer = asAudioBuffer(value);
+  const mimeType = detectAudioMimeType(audioBuffer);
+  const encoded = audioBuffer.toString("base64");
+
+  return `data:${mimeType};base64,${encoded}`;
+}
+
 function fallbackSourceSentence(topic: string, learningLanguage: string): string {
   const normalized = topic.trim().toLowerCase();
 
@@ -506,7 +546,7 @@ export async function getOrCreateSentenceAudioDataUrl(input: {
     .executeTakeFirst();
 
   if (existingAudio) {
-    return `data:audio/mpeg;base64,${asAudioBuffer(existingAudio.audio_mp3).toString("base64")}`;
+    return toAudioDataUrl(existingAudio.audio_mp3);
   }
 
   const sentenceRow = await db
@@ -544,5 +584,5 @@ export async function getOrCreateSentenceAudioDataUrl(input: {
     return null;
   }
 
-  return `data:audio/mpeg;base64,${asAudioBuffer(audioRow.audio_mp3).toString("base64")}`;
+  return toAudioDataUrl(audioRow.audio_mp3);
 }
