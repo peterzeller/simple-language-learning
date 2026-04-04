@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
+import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { useTranslations } from "next-intl";
 
 import {
@@ -32,14 +32,20 @@ export function SentenceTraining({ exercise }: SentenceTrainingProps) {
   const [audioError, setAudioError] = useState<string | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const loadedSentenceIdRef = useRef<number | null>(null);
+  const loadingSentenceIdRef = useRef<number | null>(null);
   const trackRef = useRef<HTMLButtonElement | null>(null);
   const restartTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const loadSentenceAudio = useCallback(async () => {
+  const loadSentenceAudio = async () => {
     if (!audioRef.current || loadedSentenceIdRef.current === exercise.sentenceId) {
       return Boolean(audioRef.current?.src);
     }
 
+    if (loadingSentenceIdRef.current === exercise.sentenceId) {
+      return false;
+    }
+
+    loadingSentenceIdRef.current = exercise.sentenceId;
     setIsAudioPending(true);
     const dataUrl = await getSentenceAudio({ sentenceId: exercise.sentenceId }).catch((error) => {
       console.error("[sentence-training] Failed to load sentence audio", {
@@ -49,6 +55,7 @@ export function SentenceTraining({ exercise }: SentenceTrainingProps) {
       return null;
     });
     setIsAudioPending(false);
+    loadingSentenceIdRef.current = null;
 
     if (!dataUrl || !audioRef.current) {
       setAudioError(t("sentence.audioLoadError"));
@@ -59,7 +66,7 @@ export function SentenceTraining({ exercise }: SentenceTrainingProps) {
     loadedSentenceIdRef.current = exercise.sentenceId;
     setPlaybackProgress(0);
     return true;
-  }, [exercise.sentenceId, t]);
+  };
 
   useEffect(() => {
     if (!audioRef.current) {
@@ -141,9 +148,10 @@ export function SentenceTraining({ exercise }: SentenceTrainingProps) {
   useEffect(() => {
     setAudioError(null);
     loadedSentenceIdRef.current = null;
+    loadingSentenceIdRef.current = null;
 
     void loadSentenceAudio();
-  }, [loadSentenceAudio]);
+  }, [exercise.sentenceId]);
 
   const questionByIndex = useMemo(
     () => new Map(exercise.questions.map((question) => [question.tokenIndex, question])),
