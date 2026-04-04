@@ -41,7 +41,7 @@ export function SentenceTraining({ exercise }: SentenceTrainingProps) {
     const audio = audioRef.current;
 
     const handleTimeUpdate = () => {
-      if (!audio.duration || Number.isNaN(audio.duration)) {
+      if (!Number.isFinite(audio.duration) || audio.duration <= 0) {
         setPlaybackProgress(0);
         return;
       }
@@ -118,16 +118,32 @@ export function SentenceTraining({ exercise }: SentenceTrainingProps) {
     activeQuestionIndex !== null ? exercise.tokens[activeQuestionIndex] : undefined;
 
   const seekFromTrackClick = async (event: React.MouseEvent<HTMLButtonElement>) => {
-    if (!audioRef.current || !audioRef.current.duration || !trackRef.current) {
+    if (!audioRef.current || !trackRef.current) {
+      return;
+    }
+
+    const duration = audioRef.current.duration;
+
+    if (!Number.isFinite(duration) || duration <= 0) {
       return;
     }
 
     const wasPlaying = isPlaying;
     const bounds = trackRef.current.getBoundingClientRect();
-    const offsetY = Math.min(Math.max(event.clientY - bounds.top, 0), bounds.height);
-    const ratio = bounds.height === 0 ? 0 : offsetY / bounds.height;
 
-    audioRef.current.currentTime = ratio * audioRef.current.duration;
+    if (!Number.isFinite(bounds.height) || bounds.height <= 0) {
+      return;
+    }
+
+    const offsetY = Math.min(Math.max(event.clientY - bounds.top, 0), bounds.height);
+    const ratio = Math.min(1, Math.max(0, offsetY / bounds.height));
+    const nextTime = ratio * duration;
+
+    if (!Number.isFinite(nextTime)) {
+      return;
+    }
+
+    audioRef.current.currentTime = nextTime;
     setPlaybackProgress(ratio);
 
     if (!wasPlaying) {
