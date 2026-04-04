@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, useTransition } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { useTranslations } from "next-intl";
 
 import {
@@ -29,12 +29,13 @@ export function SentenceTraining({ exercise }: SentenceTrainingProps) {
   const [isPlaying, setIsPlaying] = useState(false);
   const [playbackProgress, setPlaybackProgress] = useState(0);
   const [audioError, setAudioError] = useState<string | null>(null);
+  const audioLoadErrorMessage = t("sentence.audioLoadError");
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const loadedSentenceIdRef = useRef<number | null>(null);
   const loadingSentenceIdRef = useRef<number | null>(null);
   const trackRef = useRef<HTMLButtonElement | null>(null);
   const restartTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const logPlaybackError = (context: string, error: unknown) => {
+  const logPlaybackError = useCallback((context: string, error: unknown) => {
     if (error instanceof DOMException) {
       console.warn(`[sentence-training] ${context}`, {
         sentenceId: exercise.sentenceId,
@@ -48,9 +49,9 @@ export function SentenceTraining({ exercise }: SentenceTrainingProps) {
       sentenceId: exercise.sentenceId,
       error,
     });
-  };
+  }, [exercise.sentenceId]);
 
-  const loadSentenceAudio = () => {
+  const loadSentenceAudio = useCallback(() => {
     if (!audioRef.current || loadedSentenceIdRef.current === exercise.sentenceId) {
       return Boolean(audioRef.current?.src);
     }
@@ -79,7 +80,7 @@ export function SentenceTraining({ exercise }: SentenceTrainingProps) {
     if (!resolvedSource) {
       setIsAudioPending(false);
       loadingSentenceIdRef.current = null;
-      setAudioError(t("sentence.audioLoadError"));
+      setAudioError(audioLoadErrorMessage);
       return false;
     }
 
@@ -90,7 +91,7 @@ export function SentenceTraining({ exercise }: SentenceTrainingProps) {
     setIsAudioPending(false);
     setPlaybackProgress(0);
     return true;
-  };
+  }, [audioLoadErrorMessage, exercise.sentenceId]);
 
   useEffect(() => {
     if (!audioRef.current) {
@@ -171,15 +172,7 @@ export function SentenceTraining({ exercise }: SentenceTrainingProps) {
       audio.removeEventListener("pause", handlePause);
       audio.removeEventListener("play", handlePlay);
     };
-  }, [exercise.sentenceId]);
-
-  useEffect(() => {
-    setAudioError(null);
-    loadedSentenceIdRef.current = null;
-    loadingSentenceIdRef.current = null;
-
-    loadSentenceAudio();
-  }, [exercise.sentenceId]);
+  }, [exercise.sentenceId, logPlaybackError]);
 
   const questionByIndex = useMemo(
     () => new Map(exercise.questions.map((question) => [question.tokenIndex, question])),
