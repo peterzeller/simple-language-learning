@@ -48,6 +48,10 @@ export default async function Home() {
           </div>
 
           <div className={styles.topicActions}>
+            <Link className={styles.helperLink} href="/settings">
+              {t("home.openSettings")}
+            </Link>
+
             {user.id === 1 ? (
               <Link className={styles.helperLink} href="/admin">
                 {t("home.openAdmin")}
