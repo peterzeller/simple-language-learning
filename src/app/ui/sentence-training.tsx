@@ -12,6 +12,8 @@ import styles from "@/app/auth.module.css";
 
 interface SentenceTrainingProps {
   exercise: SentenceExercise;
+  autoReadEnabled: boolean;
+  onAutoReadEnabledChange: (enabled: boolean) => void;
 }
 
 interface AnswerState {
@@ -19,12 +21,15 @@ interface AnswerState {
   isCorrect: boolean;
 }
 
-export function SentenceTraining({ exercise }: SentenceTrainingProps) {
+export function SentenceTraining({
+  exercise,
+  autoReadEnabled,
+  onAutoReadEnabledChange,
+}: SentenceTrainingProps) {
   const [revealedWords, setRevealedWords] = useState<Record<number, boolean>>({});
   const [answers, setAnswers] = useState<Record<number, AnswerState>>({});
   const [activeQuestionIndex, setActiveQuestionIndex] = useState<number | null>(null);
   const [isPending, startTransition] = useTransition();
-  const [autoReadEnabled, setAutoReadEnabled] = useState(false);
   const [isAudioPending, setIsAudioPending] = useState(false);
   const [audioError, setAudioError] = useState<string | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
@@ -96,7 +101,7 @@ export function SentenceTraining({ exercise }: SentenceTrainingProps) {
           <input
             checked={autoReadEnabled}
             id="auto-read-toggle"
-            onChange={(event) => setAutoReadEnabled(event.target.checked)}
+            onChange={(event) => onAutoReadEnabledChange(event.target.checked)}
             type="checkbox"
           />
           Auto-read new sentence

@@ -241,6 +241,17 @@ async function generateSpeechFromOpenAI(text: string): Promise<Buffer | null> {
   }
 }
 
+
+function extractSpanishTextFromBilingualSentence(rawSentence: string): string {
+  const pairs = parseBilingualSentence(rawSentence);
+
+  if (pairs.length === 0) {
+    return rawSentence;
+  }
+
+  return pairs.map((pair) => pair.source).join("").trim() || rawSentence;
+}
+
 function fallbackSentence(topic: string): string {
   const normalized = topic.trim().toLowerCase();
 
@@ -441,7 +452,8 @@ export async function getOrCreateSentenceAudioDataUrl(input: {
     return null;
   }
 
-  const ttsAudio = await generateSpeechFromOpenAI(sentenceRow.raw_sentence);
+  const spanishText = extractSpanishTextFromBilingualSentence(sentenceRow.raw_sentence);
+  const ttsAudio = await generateSpeechFromOpenAI(spanishText);
 
   if (!ttsAudio) {
     return null;
