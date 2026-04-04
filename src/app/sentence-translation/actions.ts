@@ -6,7 +6,6 @@ import {
   type SentenceExercise,
   createSentenceExerciseFromPrompt,
   createSentenceExerciseFromRandomSentence,
-  getOrCreateSentenceAudioDataUrl,
 } from "@/lib/sentence-translation";
 
 function normalizeTopic(value: string): string {
@@ -86,5 +85,5 @@ export async function getSentenceAudio(input: { sentenceId: number }): Promise<s
     throw new Error("Unauthorized");
   }
 
-  return getOrCreateSentenceAudioDataUrl({ sentenceId: input.sentenceId });
+  return `/api/sentence-audio/${input.sentenceId}`;
 }

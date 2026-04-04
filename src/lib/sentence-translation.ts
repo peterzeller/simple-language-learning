@@ -533,9 +533,9 @@ export async function createSentenceExerciseFromRandomSentence(input: {
   return exercise;
 }
 
-export async function getOrCreateSentenceAudioDataUrl(input: {
+export async function getOrCreateSentenceAudio(input: {
   sentenceId: number;
-}): Promise<string | null> {
+}): Promise<{ audio: Buffer; mimeType: string } | null> {
   await ensureLearningTables();
   const db = getDb();
 
@@ -546,7 +546,12 @@ export async function getOrCreateSentenceAudioDataUrl(input: {
     .executeTakeFirst();
 
   if (existingAudio) {
-    return toAudioDataUrl(existingAudio.audio_mp3);
+    const audioBuffer = asAudioBuffer(existingAudio.audio_mp3);
+
+    return {
+      audio: audioBuffer,
+      mimeType: detectAudioMimeType(audioBuffer),
+    };
   }
 
   const sentenceRow = await db
@@ -584,5 +589,22 @@ export async function getOrCreateSentenceAudioDataUrl(input: {
     return null;
   }
 
-  return toAudioDataUrl(audioRow.audio_mp3);
+  const audioBuffer = asAudioBuffer(audioRow.audio_mp3);
+
+  return {
+    audio: audioBuffer,
+    mimeType: detectAudioMimeType(audioBuffer),
+  };
+}
+
+export async function getOrCreateSentenceAudioDataUrl(input: {
+  sentenceId: number;
+}): Promise<string | null> {
+  const audio = await getOrCreateSentenceAudio(input);
+
+  if (!audio) {
+    return null;
+  }
+
+  return toAudioDataUrl(audio.audio);
 }
