@@ -210,7 +210,7 @@ export function SentenceTraining({ exercise }: SentenceTrainingProps) {
     }
 
     const offsetY = Math.min(Math.max(event.clientY - bounds.top, 0), bounds.height);
-    const ratio = Math.min(1, Math.max(0, 1 - (offsetY / bounds.height)));
+    const ratio = Math.min(1, Math.max(0, offsetY / bounds.height));
     const nextTime = ratio * duration;
 
     if (!Number.isFinite(nextTime)) {
