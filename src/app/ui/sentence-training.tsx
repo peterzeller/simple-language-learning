@@ -117,17 +117,31 @@ export function SentenceTraining({ exercise }: SentenceTrainingProps) {
   const activeToken =
     activeQuestionIndex !== null ? exercise.tokens[activeQuestionIndex] : undefined;
 
-  const seekFromTrackClick = (event: React.MouseEvent<HTMLButtonElement>) => {
+  const seekFromTrackClick = async (event: React.MouseEvent<HTMLButtonElement>) => {
     if (!audioRef.current || !audioRef.current.duration || !trackRef.current) {
       return;
     }
 
+    const wasPlaying = isPlaying;
     const bounds = trackRef.current.getBoundingClientRect();
     const offsetY = Math.min(Math.max(event.clientY - bounds.top, 0), bounds.height);
     const ratio = bounds.height === 0 ? 0 : offsetY / bounds.height;
 
     audioRef.current.currentTime = ratio * audioRef.current.duration;
     setPlaybackProgress(ratio);
+
+    if (!wasPlaying) {
+      if (restartTimeoutRef.current) {
+        clearTimeout(restartTimeoutRef.current);
+        restartTimeoutRef.current = null;
+      }
+
+      try {
+        await audioRef.current.play();
+      } catch {
+        setAudioError("Audio playback was blocked. Press play again to retry.");
+      }
+    }
   };
 
   const togglePlayback = async () => {
