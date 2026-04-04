@@ -249,6 +249,22 @@
   gap: 10px;
 }
 
+
+.storyAudioControls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: center;
+}
+
+.toggleLabel {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-secondary);
+  font-weight: 600;
+}
+
 .trainingLayout {
   display: grid;
   gap: 20px;

@@ -42,12 +42,20 @@ interface SentenceTranslationsTable {
   created_at: Generated<TimestampColumn>;
 }
 
+interface SentenceAudioTable {
+  id: Generated<number>;
+  sentence_translation_id: number;
+  audio_mp3: Buffer;
+  created_at: Generated<TimestampColumn>;
+}
+
 interface Database {
   users: UsersTable;
   words: WordsTable;
   word_links: WordLinksTable;
   user_learning: UserLearningTable;
   sentence_translations: SentenceTranslationsTable;
+  sentence_audio: SentenceAudioTable;
 }
 
 declare global {
@@ -176,6 +184,22 @@ export async function ensureLearningTables(): Promise<void> {
       .addColumn("created_at", "timestamptz", (column) =>
         column.notNull().defaultTo(sql`CURRENT_TIMESTAMP`),
       )
+      .execute();
+
+    await db.schema
+      .createTable("sentence_audio")
+      .ifNotExists()
+      .addColumn("id", "integer", (column) =>
+        column.generatedAlwaysAsIdentity().primaryKey(),
+      )
+      .addColumn("sentence_translation_id", "integer", (column) =>
+        column.references("sentence_translations.id").onDelete("cascade").notNull(),
+      )
+      .addColumn("audio_mp3", "bytea", (column) => column.notNull())
+      .addColumn("created_at", "timestamptz", (column) =>
+        column.notNull().defaultTo(sql`CURRENT_TIMESTAMP`),
+      )
+      .addUniqueConstraint("sentence_audio_sentence_translation_id_key", ["sentence_translation_id"])
       .execute();
   })();
 

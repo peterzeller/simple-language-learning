@@ -1,8 +1,12 @@
 "use client";
 
-import { useMemo, useState, useTransition } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
 
-import { recordSentenceAnswer, recordSentenceReveal } from "@/app/sentence-translation/actions";
+import {
+  getSentenceAudio,
+  recordSentenceAnswer,
+  recordSentenceReveal,
+} from "@/app/sentence-translation/actions";
 import type { SentenceExercise } from "@/lib/sentence-translation";
 import styles from "@/app/auth.module.css";
 
@@ -20,6 +24,17 @@ export function SentenceTraining({ exercise }: SentenceTrainingProps) {
   const [answers, setAnswers] = useState<Record<number, AnswerState>>({});
   const [activeQuestionIndex, setActiveQuestionIndex] = useState<number | null>(null);
   const [isPending, startTransition] = useTransition();
+  const [autoReadEnabled, setAutoReadEnabled] = useState(false);
+  const [isAudioPending, setIsAudioPending] = useState(false);
+  const [audioError, setAudioError] = useState<string | null>(null);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+
+  useEffect(() => {
+    setRevealedWords({});
+    setAnswers({});
+    setActiveQuestionIndex(null);
+    setAudioError(null);
+  }, [exercise.sentenceId]);
 
   const questionByIndex = useMemo(
     () => new Map(exercise.questions.map((question) => [question.tokenIndex, question])),
@@ -31,8 +46,65 @@ export function SentenceTraining({ exercise }: SentenceTrainingProps) {
   const activeToken =
     activeQuestionIndex !== null ? exercise.tokens[activeQuestionIndex] : undefined;
 
+  const playStory = useCallback(async () => {
+    setAudioError(null);
+    setIsAudioPending(true);
+
+    try {
+      const dataUrl = await getSentenceAudio({ sentenceId: exercise.sentenceId });
+
+      if (!dataUrl) {
+        setAudioError("Unable to generate narration audio for this sentence right now.");
+        return;
+      }
+
+      if (!audioRef.current) {
+        audioRef.current = new Audio();
+      }
+
+      audioRef.current.src = dataUrl;
+      await audioRef.current.play();
+    } catch {
+      setAudioError("Audio playback was blocked or unavailable. Try pressing Read story again.");
+    } finally {
+      setIsAudioPending(false);
+    }
+  }, [exercise.sentenceId]);
+
+  useEffect(() => {
+    if (!autoReadEnabled) {
+      return;
+    }
+
+    void playStory();
+  }, [autoReadEnabled, playStory]);
+
   return (
     <div className={styles.trainingLayout}>
+      <div className={styles.storyAudioControls}>
+        <button
+          className={styles.secondaryButton}
+          disabled={isAudioPending}
+          onClick={() => {
+            void playStory();
+          }}
+          type="button"
+        >
+          {isAudioPending ? "Generating audio..." : "🔊 Read story"}
+        </button>
+        <label className={styles.toggleLabel} htmlFor="auto-read-toggle">
+          <input
+            checked={autoReadEnabled}
+            id="auto-read-toggle"
+            onChange={(event) => setAutoReadEnabled(event.target.checked)}
+            type="checkbox"
+          />
+          Auto-read new sentence
+        </label>
+      </div>
+
+      {audioError && <p className={styles.helperText}>{audioError}</p>}
+
       <div className={styles.sentenceLine}>
         {exercise.tokens.map((token, index) => {
           const question = questionByIndex.get(index);
