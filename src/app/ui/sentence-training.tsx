@@ -1,10 +1,9 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, useTransition } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { useTranslations } from "next-intl";
 
 import {
-  getSentenceAudio,
   recordSentenceAnswer,
   recordSentenceReveal,
 } from "@/app/sentence-translation/actions";
@@ -30,10 +29,69 @@ export function SentenceTraining({ exercise }: SentenceTrainingProps) {
   const [isPlaying, setIsPlaying] = useState(false);
   const [playbackProgress, setPlaybackProgress] = useState(0);
   const [audioError, setAudioError] = useState<string | null>(null);
+  const audioLoadErrorMessage = t("sentence.audioLoadError");
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const loadedSentenceIdRef = useRef<number | null>(null);
+  const loadingSentenceIdRef = useRef<number | null>(null);
   const trackRef = useRef<HTMLButtonElement | null>(null);
   const restartTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const logPlaybackError = useCallback((context: string, error: unknown) => {
+    if (error instanceof DOMException) {
+      console.warn(`[sentence-training] ${context}`, {
+        sentenceId: exercise.sentenceId,
+        name: error.name,
+        message: error.message,
+      });
+      return;
+    }
+
+    console.warn(`[sentence-training] ${context}`, {
+      sentenceId: exercise.sentenceId,
+      error,
+    });
+  }, [exercise.sentenceId]);
+
+  const loadSentenceAudio = useCallback(() => {
+    if (!audioRef.current || loadedSentenceIdRef.current === exercise.sentenceId) {
+      return Boolean(audioRef.current?.src);
+    }
+
+    if (loadingSentenceIdRef.current === exercise.sentenceId) {
+      return false;
+    }
+
+    setIsAudioPending(true);
+    loadingSentenceIdRef.current = exercise.sentenceId;
+    const audioSource = `/api/sentence-audio/${exercise.sentenceId}`;
+
+    const resolvedSource = (() => {
+      try {
+        return new URL(audioSource, window.location.origin).toString();
+      } catch (error) {
+        console.error("[sentence-training] Invalid audio URL returned by getSentenceAudio", {
+          sentenceId: exercise.sentenceId,
+          audioSource,
+          error,
+        });
+        return null;
+      }
+    })();
+
+    if (!resolvedSource) {
+      setIsAudioPending(false);
+      loadingSentenceIdRef.current = null;
+      setAudioError(audioLoadErrorMessage);
+      return false;
+    }
+
+    audioRef.current.src = resolvedSource;
+    audioRef.current.load();
+    loadedSentenceIdRef.current = exercise.sentenceId;
+    loadingSentenceIdRef.current = null;
+    setIsAudioPending(false);
+    setPlaybackProgress(0);
+    return true;
+  }, [audioLoadErrorMessage, exercise.sentenceId]);
 
   useEffect(() => {
     if (!audioRef.current) {
@@ -42,7 +100,7 @@ export function SentenceTraining({ exercise }: SentenceTrainingProps) {
 
     const audio = audioRef.current;
 
-    const handleTimeUpdate = () => {
+    const syncPlaybackProgress = () => {
       if (!Number.isFinite(audio.duration) || audio.duration <= 0) {
         setPlaybackProgress(0);
         return;
@@ -69,8 +127,8 @@ export function SentenceTraining({ exercise }: SentenceTrainingProps) {
 
         try {
           await audio.play();
-        } catch {
-          setAudioError(t("sentence.audioBlocked"));
+        } catch (error) {
+          logPlaybackError("Auto-replay failed", error);
         }
       }, 2000);
     };
@@ -86,9 +144,13 @@ export function SentenceTraining({ exercise }: SentenceTrainingProps) {
 
     const handlePlay = () => {
       setIsPlaying(true);
+      syncPlaybackProgress();
     };
 
-    audio.addEventListener("timeupdate", handleTimeUpdate);
+    audio.addEventListener("timeupdate", syncPlaybackProgress);
+    audio.addEventListener("loadedmetadata", syncPlaybackProgress);
+    audio.addEventListener("durationchange", syncPlaybackProgress);
+    audio.addEventListener("seeked", syncPlaybackProgress);
     audio.addEventListener("ended", handleEnded);
     audio.addEventListener("pause", handlePause);
     audio.addEventListener("play", handlePlay);
@@ -102,12 +164,15 @@ export function SentenceTraining({ exercise }: SentenceTrainingProps) {
       audio.pause();
       audio.currentTime = 0;
       audio.src = "";
-      audio.removeEventListener("timeupdate", handleTimeUpdate);
+      audio.removeEventListener("timeupdate", syncPlaybackProgress);
+      audio.removeEventListener("loadedmetadata", syncPlaybackProgress);
+      audio.removeEventListener("durationchange", syncPlaybackProgress);
+      audio.removeEventListener("seeked", syncPlaybackProgress);
       audio.removeEventListener("ended", handleEnded);
       audio.removeEventListener("pause", handlePause);
       audio.removeEventListener("play", handlePlay);
     };
-  }, [t]);
+  }, [exercise.sentenceId, logPlaybackError]);
 
   const questionByIndex = useMemo(
     () => new Map(exercise.questions.map((question) => [question.tokenIndex, question])),
@@ -156,7 +221,8 @@ export function SentenceTraining({ exercise }: SentenceTrainingProps) {
 
       try {
         await audioRef.current.play();
-      } catch {
+      } catch (error) {
+        logPlaybackError("Playback from seek failed", error);
         setAudioError(t("sentence.audioBlocked"));
       }
     }
@@ -180,23 +246,16 @@ export function SentenceTraining({ exercise }: SentenceTrainingProps) {
     }
 
     if (loadedSentenceIdRef.current !== exercise.sentenceId || !audioRef.current.src) {
-      setIsAudioPending(true);
-      const dataUrl = await getSentenceAudio({ sentenceId: exercise.sentenceId }).catch(() => null);
-      setIsAudioPending(false);
-
-      if (!dataUrl) {
-        setAudioError(t("sentence.audioLoadError"));
+      const audioLoaded = loadSentenceAudio();
+      if (!audioLoaded) {
         return;
       }
-
-      audioRef.current.src = dataUrl;
-      loadedSentenceIdRef.current = exercise.sentenceId;
-      setPlaybackProgress(0);
     }
 
     try {
       await audioRef.current.play();
-    } catch {
+    } catch (error) {
+      logPlaybackError("User-triggered playback failed", error);
       setAudioError(t("sentence.audioBlocked"));
     }
   };
