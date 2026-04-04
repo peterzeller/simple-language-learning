@@ -47,7 +47,7 @@ export function SentenceTraining({ exercise }: SentenceTrainingProps) {
 
     loadingSentenceIdRef.current = exercise.sentenceId;
     setIsAudioPending(true);
-    const dataUrl = await getSentenceAudio({ sentenceId: exercise.sentenceId }).catch((error) => {
+    const audioSource = await getSentenceAudio({ sentenceId: exercise.sentenceId }).catch((error) => {
       console.error("[sentence-training] Failed to load sentence audio", {
         sentenceId: exercise.sentenceId,
         error,
@@ -57,12 +57,31 @@ export function SentenceTraining({ exercise }: SentenceTrainingProps) {
     setIsAudioPending(false);
     loadingSentenceIdRef.current = null;
 
-    if (!dataUrl || !audioRef.current) {
+    if (!audioSource || !audioRef.current) {
       setAudioError(t("sentence.audioLoadError"));
       return false;
     }
 
-    audioRef.current.src = dataUrl;
+    const resolvedSource = (() => {
+      try {
+        return new URL(audioSource, window.location.origin).toString();
+      } catch (error) {
+        console.error("[sentence-training] Invalid audio URL returned by getSentenceAudio", {
+          sentenceId: exercise.sentenceId,
+          audioSource,
+          error,
+        });
+        return null;
+      }
+    })();
+
+    if (!resolvedSource) {
+      setAudioError(t("sentence.audioLoadError"));
+      return false;
+    }
+
+    audioRef.current.src = resolvedSource;
+    audioRef.current.load();
     loadedSentenceIdRef.current = exercise.sentenceId;
     setPlaybackProgress(0);
     return true;
