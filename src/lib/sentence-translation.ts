@@ -107,7 +107,7 @@ async function generateFromOpenAI(topic: string): Promise<{ rawSentence: string;
         Authorization: `Bearer ${apiKey}`,
       },
       body: JSON.stringify({
-        model: "gpt-4.1-mini",
+        model: "gpt-5.4-mini",
         input: input.prompt,
         text: {
           format: {
