@@ -110,6 +110,8 @@ export async function register(
     .values({
       email,
       password_hash: passwordHash,
+      learning_language: "es",
+      known_language: "en",
       updated_at: new Date(),
     })
     .returning("id")

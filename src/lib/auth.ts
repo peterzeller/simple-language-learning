@@ -14,6 +14,8 @@ const SESSION_DURATION_MS = 1000 * 60 * 60 * 24 * 30;
 export interface SessionUser {
   id: number;
   email: string;
+  learningLanguage: string;
+  knownLanguage: string;
 }
 
 function normalizeEmail(email: string): string {
@@ -128,7 +130,7 @@ export async function getCurrentUser(): Promise<SessionUser | null> {
   const sessionTokenHash = await sha256Hex(sessionToken);
   const user = await db
     .selectFrom("users")
-    .select(["id", "email", "session_expires_at"])
+    .select(["id", "email", "learning_language", "known_language", "session_expires_at"])
     .where("session_token_hash", "=", sessionTokenHash)
     .executeTakeFirst();
 
@@ -143,6 +145,8 @@ export async function getCurrentUser(): Promise<SessionUser | null> {
   return {
     id: user.id,
     email: user.email,
+    learningLanguage: user.learning_language,
+    knownLanguage: user.known_language,
   };
 }
 

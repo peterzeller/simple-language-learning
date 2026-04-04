@@ -10,7 +10,11 @@ export async function getNextVocabularyQuestion(): Promise<VocabularyQuestion | 
     return null;
   }
 
-  return getVocabularyQuestionForUser(user.id);
+  return getVocabularyQuestionForUser({
+    userId: user.id,
+    learningLanguage: user.learningLanguage,
+    knownLanguage: user.knownLanguage,
+  });
 }
 
 export async function submitVocabularyAnswer(input: {
@@ -29,5 +33,9 @@ export async function submitVocabularyAnswer(input: {
     isCorrect: input.isCorrect,
   });
 
-  return getVocabularyQuestionForUser(user.id);
+  return getVocabularyQuestionForUser({
+    userId: user.id,
+    learningLanguage: user.learningLanguage,
+    knownLanguage: user.knownLanguage,
+  });
 }

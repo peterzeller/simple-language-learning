@@ -9,6 +9,8 @@ interface UsersTable {
   id: Generated<number>;
   email: string;
   password_hash: string;
+  learning_language: string;
+  known_language: string;
   session_token_hash: string | null;
   session_expires_at: TimestampColumn | null;
   created_at: Generated<TimestampColumn>;
@@ -38,8 +40,9 @@ interface UserLearningTable {
 interface SentenceTranslationsTable {
   id: Generated<number>;
   topic: string;
+  learning_language: string;
   raw_sentence: string;
-  spanish_text: string | null;
+  source_text: string | null;
   created_at: Generated<TimestampColumn>;
 }
 
@@ -107,6 +110,8 @@ export async function ensureUsersTable(): Promise<void> {
     )
     .addColumn("email", "varchar(320)", (column) => column.notNull())
     .addColumn("password_hash", "text", (column) => column.notNull())
+    .addColumn("learning_language", "varchar(12)", (column) => column.notNull().defaultTo("es"))
+    .addColumn("known_language", "varchar(12)", (column) => column.notNull().defaultTo("en"))
     .addColumn("session_token_hash", "varchar(64)")
     .addColumn("session_expires_at", "timestamptz")
     .addColumn("created_at", "timestamptz", (column) =>
@@ -118,6 +123,16 @@ export async function ensureUsersTable(): Promise<void> {
     .addUniqueConstraint("users_email_key", ["email"])
     .addUniqueConstraint("users_session_token_hash_key", ["session_token_hash"])
     .execute()
+    .then(async () => {
+      await sql`
+        ALTER TABLE users
+        ADD COLUMN IF NOT EXISTS learning_language varchar(12) NOT NULL DEFAULT 'es'
+      `.execute(db);
+      await sql`
+        ALTER TABLE users
+        ADD COLUMN IF NOT EXISTS known_language varchar(12) NOT NULL DEFAULT 'en'
+      `.execute(db);
+    })
     .then(() => undefined);
 
   await globalThis.__simpleLanguageLearningUsersInit;
@@ -181,8 +196,9 @@ export async function ensureLearningTables(): Promise<void> {
         column.generatedAlwaysAsIdentity().primaryKey(),
       )
       .addColumn("topic", "text", (column) => column.notNull())
+      .addColumn("learning_language", "varchar(12)", (column) => column.notNull().defaultTo("es"))
       .addColumn("raw_sentence", "text", (column) => column.notNull())
-      .addColumn("spanish_text", "text")
+      .addColumn("source_text", "text")
       .addColumn("created_at", "timestamptz", (column) =>
         column.notNull().defaultTo(sql`CURRENT_TIMESTAMP`),
       )
@@ -190,7 +206,34 @@ export async function ensureLearningTables(): Promise<void> {
 
     await sql`
       ALTER TABLE sentence_translations
-      ADD COLUMN IF NOT EXISTS spanish_text text
+      ADD COLUMN IF NOT EXISTS learning_language varchar(12) NOT NULL DEFAULT 'es'
+    `.execute(db);
+
+    await sql`
+      ALTER TABLE sentence_translations
+      ADD COLUMN IF NOT EXISTS source_text text
+    `.execute(db);
+
+    await sql`
+      DO $$
+      BEGIN
+        IF EXISTS (
+          SELECT 1
+          FROM information_schema.columns
+          WHERE table_name = 'sentence_translations'
+            AND column_name = 'spanish_text'
+        ) THEN
+          UPDATE sentence_translations
+          SET source_text = spanish_text
+          WHERE source_text IS NULL
+            AND spanish_text IS NOT NULL;
+        END IF;
+      END $$;
+    `.execute(db);
+
+    await sql`
+      ALTER TABLE sentence_translations
+      DROP COLUMN IF EXISTS spanish_text
     `.execute(db);
 
     await db.schema

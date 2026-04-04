@@ -15,7 +15,11 @@ export default async function VocabularyTrainingPage() {
     redirect("/");
   }
 
-  const initialQuestion = await getVocabularyQuestionForUser(user.id);
+  const initialQuestion = await getVocabularyQuestionForUser({
+    userId: user.id,
+    learningLanguage: user.learningLanguage,
+    knownLanguage: user.knownLanguage,
+  });
 
   return (
     <main className={styles.page}>

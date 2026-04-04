@@ -34,6 +34,8 @@ export default async function SentenceTranslationPage({
   const exercise = await createSentenceExerciseFromRandomSentence({
     topic,
     userId: user.id,
+    learningLanguage: user.learningLanguage,
+    knownLanguage: user.knownLanguage,
   });
 
   return (
