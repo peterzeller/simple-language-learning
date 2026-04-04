@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState, useTransition } from "react";
+import { useTranslations } from "next-intl";
 
 import {
   getSentenceAudio,
@@ -20,6 +21,7 @@ interface AnswerState {
 }
 
 export function SentenceTraining({ exercise }: SentenceTrainingProps) {
+  const t = useTranslations();
   const [revealedWords, setRevealedWords] = useState<Record<number, boolean>>({});
   const [answers, setAnswers] = useState<Record<number, AnswerState>>({});
   const [activeQuestionIndex, setActiveQuestionIndex] = useState<number | null>(null);
@@ -68,7 +70,7 @@ export function SentenceTraining({ exercise }: SentenceTrainingProps) {
         try {
           await audio.play();
         } catch {
-          setAudioError("Audio playback was blocked. Press play again to retry.");
+          setAudioError(t("sentence.audioBlocked"));
         }
       }, 2000);
     };
@@ -105,7 +107,7 @@ export function SentenceTraining({ exercise }: SentenceTrainingProps) {
       audio.removeEventListener("pause", handlePause);
       audio.removeEventListener("play", handlePlay);
     };
-  }, []);
+  }, [t]);
 
   const questionByIndex = useMemo(
     () => new Map(exercise.questions.map((question) => [question.tokenIndex, question])),
@@ -155,7 +157,7 @@ export function SentenceTraining({ exercise }: SentenceTrainingProps) {
       try {
         await audioRef.current.play();
       } catch {
-        setAudioError("Audio playback was blocked. Press play again to retry.");
+        setAudioError(t("sentence.audioBlocked"));
       }
     }
   };
@@ -183,7 +185,7 @@ export function SentenceTraining({ exercise }: SentenceTrainingProps) {
       setIsAudioPending(false);
 
       if (!dataUrl) {
-        setAudioError("Unable to load narration audio for this sentence right now.");
+        setAudioError(t("sentence.audioLoadError"));
         return;
       }
 
@@ -195,7 +197,7 @@ export function SentenceTraining({ exercise }: SentenceTrainingProps) {
     try {
       await audioRef.current.play();
     } catch {
-      setAudioError("Audio playback was blocked. Press play again to retry.");
+      setAudioError(t("sentence.audioBlocked"));
     }
   };
 
@@ -206,7 +208,7 @@ export function SentenceTraining({ exercise }: SentenceTrainingProps) {
       <div className={styles.sentencePlaybackLayout}>
         <div className={styles.playbackRail}>
           <button
-            aria-label={isPlaying ? "Pause narration" : "Play narration"}
+            aria-label={isPlaying ? t("sentence.pauseNarration") : t("sentence.playNarration")}
             className={styles.playbackButton}
             disabled={isAudioPending}
             onClick={() => {
@@ -281,10 +283,10 @@ export function SentenceTraining({ exercise }: SentenceTrainingProps) {
         <dialog className={styles.translationDialog} onClose={() => setActiveQuestionIndex(null)} open>
           <div className={styles.dialogHeading}>
             <h2>
-              Select the translation for <strong>{activeToken.source}</strong>
+              {t("sentence.selectTranslationFor")} <strong>{activeToken.source}</strong>
             </h2>
             <button
-              aria-label="Close translation dialog"
+              aria-label={t("sentence.closeDialog")}
               className={styles.dialogClose}
               onClick={() => setActiveQuestionIndex(null)}
               type="button"
@@ -339,7 +341,7 @@ export function SentenceTraining({ exercise }: SentenceTrainingProps) {
         </dialog>
       )}
 
-      {isPending && <p className={styles.helperText}>Saving your progress…</p>}
+      {isPending && <p className={styles.helperText}>{t("sentence.saving")}</p>}
     </div>
   );
 }
