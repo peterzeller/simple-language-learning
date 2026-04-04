@@ -22,7 +22,6 @@ export function SentenceTranslationWorkspace({
   const [topic, setTopic] = useState(initialTopic);
   const [exercise, setExercise] = useState(initialExercise);
   const [isPending, startTransition] = useTransition();
-  const [autoReadEnabled, setAutoReadEnabled] = useState(false);
 
   const fetchExercise = (mode: "prompt" | "random") => {
     startTransition(async () => {
@@ -73,11 +72,7 @@ export function SentenceTranslationWorkspace({
       </div>
 
       {isPending && <p className={styles.helperText}>Loading sentence...</p>}
-      <SentenceTraining
-        autoReadEnabled={autoReadEnabled}
-        exercise={exercise}
-        onAutoReadEnabledChange={setAutoReadEnabled}
-      />
+      <SentenceTraining exercise={exercise} key={exercise.sentenceId} />
     </>
   );
 }

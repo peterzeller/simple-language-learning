@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
+import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 
 import {
   getSentenceAudio,
@@ -12,8 +12,6 @@ import styles from "@/app/auth.module.css";
 
 interface SentenceTrainingProps {
   exercise: SentenceExercise;
-  autoReadEnabled: boolean;
-  onAutoReadEnabledChange: (enabled: boolean) => void;
 }
 
 interface AnswerState {
@@ -21,25 +19,62 @@ interface AnswerState {
   isCorrect: boolean;
 }
 
-export function SentenceTraining({
-  exercise,
-  autoReadEnabled,
-  onAutoReadEnabledChange,
-}: SentenceTrainingProps) {
+export function SentenceTraining({ exercise }: SentenceTrainingProps) {
   const [revealedWords, setRevealedWords] = useState<Record<number, boolean>>({});
   const [answers, setAnswers] = useState<Record<number, AnswerState>>({});
   const [activeQuestionIndex, setActiveQuestionIndex] = useState<number | null>(null);
   const [isPending, startTransition] = useTransition();
   const [isAudioPending, setIsAudioPending] = useState(false);
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [playbackProgress, setPlaybackProgress] = useState(0);
   const [audioError, setAudioError] = useState<string | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
+  const loadedSentenceIdRef = useRef<number | null>(null);
 
   useEffect(() => {
-    setRevealedWords({});
-    setAnswers({});
-    setActiveQuestionIndex(null);
-    setAudioError(null);
-  }, [exercise.sentenceId]);
+    if (!audioRef.current) {
+      audioRef.current = new Audio();
+    }
+
+    const audio = audioRef.current;
+
+    const handleTimeUpdate = () => {
+      if (!audio.duration || Number.isNaN(audio.duration)) {
+        setPlaybackProgress(0);
+        return;
+      }
+
+      setPlaybackProgress(Math.min(1, audio.currentTime / audio.duration));
+    };
+
+    const handleEnded = () => {
+      setIsPlaying(false);
+      setPlaybackProgress(1);
+    };
+
+    const handlePause = () => {
+      setIsPlaying(false);
+    };
+
+    const handlePlay = () => {
+      setIsPlaying(true);
+    };
+
+    audio.addEventListener("timeupdate", handleTimeUpdate);
+    audio.addEventListener("ended", handleEnded);
+    audio.addEventListener("pause", handlePause);
+    audio.addEventListener("play", handlePlay);
+
+    return () => {
+      audio.pause();
+      audio.currentTime = 0;
+      audio.src = "";
+      audio.removeEventListener("timeupdate", handleTimeUpdate);
+      audio.removeEventListener("ended", handleEnded);
+      audio.removeEventListener("pause", handlePause);
+      audio.removeEventListener("play", handlePlay);
+    };
+  }, []);
 
   const questionByIndex = useMemo(
     () => new Map(exercise.questions.map((question) => [question.tokenIndex, question])),
@@ -51,118 +86,116 @@ export function SentenceTraining({
   const activeToken =
     activeQuestionIndex !== null ? exercise.tokens[activeQuestionIndex] : undefined;
 
-  const playStory = useCallback(async () => {
+  const togglePlayback = async () => {
     setAudioError(null);
-    setIsAudioPending(true);
 
-    try {
-      const dataUrl = await getSentenceAudio({ sentenceId: exercise.sentenceId });
-
-      if (!dataUrl) {
-        setAudioError("Unable to generate narration audio for this sentence right now.");
-        return;
-      }
-
-      if (!audioRef.current) {
-        audioRef.current = new Audio();
-      }
-
-      audioRef.current.src = dataUrl;
-      await audioRef.current.play();
-    } catch {
-      setAudioError("Audio playback was blocked or unavailable. Try pressing Read story again.");
-    } finally {
-      setIsAudioPending(false);
-    }
-  }, [exercise.sentenceId]);
-
-  useEffect(() => {
-    if (!autoReadEnabled) {
+    if (!audioRef.current) {
       return;
     }
 
-    void playStory();
-  }, [autoReadEnabled, playStory]);
+    if (isPlaying) {
+      audioRef.current.pause();
+      return;
+    }
+
+    if (loadedSentenceIdRef.current !== exercise.sentenceId || !audioRef.current.src) {
+      setIsAudioPending(true);
+      const dataUrl = await getSentenceAudio({ sentenceId: exercise.sentenceId }).catch(() => null);
+      setIsAudioPending(false);
+
+      if (!dataUrl) {
+        setAudioError("Unable to load narration audio for this sentence right now.");
+        return;
+      }
+
+      audioRef.current.src = dataUrl;
+      loadedSentenceIdRef.current = exercise.sentenceId;
+      setPlaybackProgress(0);
+    }
+
+    try {
+      await audioRef.current.play();
+    } catch {
+      setAudioError("Audio playback was blocked. Press play again to retry.");
+    }
+  };
 
   return (
     <div className={styles.trainingLayout}>
-      <div className={styles.storyAudioControls}>
-        <button
-          className={styles.secondaryButton}
-          disabled={isAudioPending}
-          onClick={() => {
-            void playStory();
-          }}
-          type="button"
-        >
-          {isAudioPending ? "Generating audio..." : "🔊 Read story"}
-        </button>
-        <label className={styles.toggleLabel} htmlFor="auto-read-toggle">
-          <input
-            checked={autoReadEnabled}
-            id="auto-read-toggle"
-            onChange={(event) => onAutoReadEnabledChange(event.target.checked)}
-            type="checkbox"
-          />
-          Auto-read new sentence
-        </label>
-      </div>
-
       {audioError && <p className={styles.helperText}>{audioError}</p>}
 
-      <div className={styles.sentenceLine}>
-        {exercise.tokens.map((token, index) => {
-          const question = questionByIndex.get(index);
-          const answer = answers[index];
-          const shouldReveal = !token.isQuestion && (token.revealByDefault || revealedWords[index]);
+      <div className={styles.sentencePlaybackLayout}>
+        <div className={styles.playbackRail}>
+          <button
+            aria-label={isPlaying ? "Pause narration" : "Play narration"}
+            className={styles.playbackButton}
+            disabled={isAudioPending}
+            onClick={() => {
+              void togglePlayback();
+            }}
+            type="button"
+          >
+            {isAudioPending ? "…" : isPlaying ? "❚❚" : "▶"}
+          </button>
+          <div className={styles.playbackTrack}>
+            <div className={styles.playbackProgress} style={{ height: `${playbackProgress * 100}%` }} />
+          </div>
+        </div>
 
-          const cardClassName = [styles.wordCard];
+        <div className={styles.sentenceLine}>
+          {exercise.tokens.map((token, index) => {
+            const question = questionByIndex.get(index);
+            const answer = answers[index];
+            const shouldReveal = !token.isQuestion && (token.revealByDefault || revealedWords[index]);
 
-          if (question && !answer) {
-            cardClassName.push(styles.wordCardQuestion);
-          }
+            const cardClassName = [styles.wordCard];
 
-          if (answer?.isCorrect) {
-            cardClassName.push(styles.wordCardCorrect);
-          }
+            if (question && !answer) {
+              cardClassName.push(styles.wordCardQuestion);
+            }
 
-          if (answer && !answer.isCorrect) {
-            cardClassName.push(styles.wordCardWrong);
-          }
+            if (answer?.isCorrect) {
+              cardClassName.push(styles.wordCardCorrect);
+            }
 
-          return (
-            <button
-              className={cardClassName.join(" ")}
-              key={`${token.source}-${index}`}
-              onClick={() => {
-                if (question) {
-                  setActiveQuestionIndex(index);
-                  return;
-                }
+            if (answer && !answer.isCorrect) {
+              cardClassName.push(styles.wordCardWrong);
+            }
 
-                let shouldRecordReveal = false;
-                setRevealedWords((prev) => {
-                  const currentlyVisible = token.revealByDefault || Boolean(prev[index]);
-                  const nextIsVisible = !currentlyVisible;
-                  shouldRecordReveal = !currentlyVisible && nextIsVisible;
-                  return { ...prev, [index]: nextIsVisible };
-                });
+            return (
+              <button
+                className={cardClassName.join(" ")}
+                key={`${token.source}-${index}`}
+                onClick={() => {
+                  if (question) {
+                    setActiveQuestionIndex(index);
+                    return;
+                  }
 
-                if (shouldRecordReveal) {
-                  startTransition(async () => {
-                    await recordSentenceReveal({ wordId: token.wordId });
+                  let shouldRecordReveal = false;
+                  setRevealedWords((prev) => {
+                    const currentlyVisible = token.revealByDefault || Boolean(prev[index]);
+                    const nextIsVisible = !currentlyVisible;
+                    shouldRecordReveal = !currentlyVisible && nextIsVisible;
+                    return { ...prev, [index]: nextIsVisible };
                   });
-                }
-              }}
-              type="button"
-            >
-              <span>{token.source}</span>
-              <small className={styles.wordTranslation}>
-                {answer || shouldReveal ? token.target : ""}
-              </small>
-            </button>
-          );
-        })}
+
+                  if (shouldRecordReveal) {
+                    startTransition(async () => {
+                      await recordSentenceReveal({ wordId: token.wordId });
+                    });
+                  }
+                }}
+                type="button"
+              >
+                <span>{token.source}</span>
+                <small className={styles.wordTranslation}>
+                  {answer || shouldReveal ? token.target : ""}
+                </small>
+              </button>
+            );
+          })}
+        </div>
       </div>
 
       {activeQuestion && activeToken && activeQuestionIndex !== null && (
