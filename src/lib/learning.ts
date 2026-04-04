@@ -237,7 +237,7 @@ function shuffle<T>(values: T[]): T[] {
 }
 
 export async function getVocabularyQuestionForUser(
-  userId: number,
+  input: { userId: number; learningLanguage: string; knownLanguage: string },
 ): Promise<VocabularyQuestion | null> {
   await ensureLearningTables();
   const db = getDb();
@@ -252,8 +252,8 @@ export async function getVocabularyQuestionForUser(
       "target_words.word as targetWord",
       "word_links.count as translationCount",
     ])
-    .where("source_words.language", "=", "es")
-    .where("target_words.language", "=", "en")
+    .where("source_words.language", "=", input.learningLanguage)
+    .where("target_words.language", "=", input.knownLanguage)
     .execute();
 
   if (candidateRows.length === 0) {
@@ -300,7 +300,7 @@ export async function getVocabularyQuestionForUser(
         )
         .as("accuracy"),
     ])
-    .where("user_id", "=", userId)
+    .where("user_id", "=", input.userId)
     .groupBy("word_id")
     .execute();
 

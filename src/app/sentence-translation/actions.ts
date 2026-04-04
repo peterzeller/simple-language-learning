@@ -25,6 +25,8 @@ export async function createSentenceFromPrompt(input: {
   return createSentenceExerciseFromPrompt({
     topic: normalizeTopic(input.topic),
     userId: user.id,
+    learningLanguage: user.learningLanguage,
+    knownLanguage: user.knownLanguage,
   });
 }
 
@@ -40,6 +42,8 @@ export async function createSentenceFromRandom(input: {
   return createSentenceExerciseFromRandomSentence({
     topic: normalizeTopic(input.topic),
     userId: user.id,
+    learningLanguage: user.learningLanguage,
+    knownLanguage: user.knownLanguage,
   });
 }
 

@@ -12,6 +12,7 @@ export const messages = {
       settings: "Settings",
       language: "Language",
       english: "English",
+      spanish: "Spanish",
       german: "German",
       save: "Save",
       saved: "Saved.",
@@ -56,6 +57,8 @@ export const messages = {
     settings: {
       title: "Settings",
       description: "Choose the language used for the user interface.",
+      learnLanguage: "Language you want to learn",
+      knownLanguage: "Language you already know",
     },
     stats: {
       wordKnowledge: "Word knowledge",
@@ -102,6 +105,7 @@ export const messages = {
       settings: "Einstellungen",
       language: "Sprache",
       english: "Englisch",
+      spanish: "Spanisch",
       german: "Deutsch",
       save: "Speichern",
       saved: "Gespeichert.",
@@ -146,6 +150,8 @@ export const messages = {
     settings: {
       title: "Einstellungen",
       description: "Wähle die Sprache für die Benutzeroberfläche.",
+      learnLanguage: "Sprache, die du lernen willst",
+      knownLanguage: "Sprache, die du bereits kannst",
     },
     stats: {
       wordKnowledge: "Wortkenntnis",

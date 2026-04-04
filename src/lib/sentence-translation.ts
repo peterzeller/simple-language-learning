@@ -1,21 +1,16 @@
 import "server-only";
 
+import OpenAI from "openai";
 import { sql } from "kysely";
+
 import { ensureLearningTables, getDb } from "@/lib/db";
+import { LANGUAGE_LABELS, type SupportedLearningLanguage, isSupportedLearningLanguage } from "@/lib/language-settings";
 import {
   getUserWordKnowledgeTable,
   normalizeWord,
   storeTranslationPairs,
 } from "@/lib/learning";
 import { parseBilingualSentence } from "@/lib/parse-bilingual-sentence";
-
-const ENRICHING_PROMPT_BUILDERS = [
-  (topic: string) => `Create a joke in Spanish about ${topic}.`,
-  (topic: string) => `Create a dialogue in Spanish where two people talk about ${topic}.`,
-  (topic: string) => `Create a short story in Spanish where ${topic} appears.`,
-  (topic: string) => `Create a vivid scene in Spanish inspired by ${topic}.`,
-  (topic: string) => `Create a mini mystery in Spanish related to ${topic}.`,
-];
 
 export interface SentenceToken {
   source: string;
@@ -38,10 +33,29 @@ export interface SentenceExercise {
   questions: SentenceQuestion[];
 }
 
+function getOpenAiClient(): OpenAI | null {
+  const apiKey = process.env.OPEN_AI_KEY;
+
+  if (!apiKey) {
+    return null;
+  }
+
+  return new OpenAI({ apiKey });
+}
+
+function asSupportedLanguage(language: string): SupportedLearningLanguage {
+  if (isSupportedLearningLanguage(language)) {
+    return language;
+  }
+
+  return "es";
+}
+
 async function saveGeneratedSentence(input: {
   topic: string;
+  learningLanguage: string;
   rawSentence: string;
-  spanishText: string;
+  sourceText: string;
 }): Promise<number> {
   await ensureLearningTables();
   const db = getDb();
@@ -50,8 +64,9 @@ async function saveGeneratedSentence(input: {
     .insertInto("sentence_translations")
     .values({
       topic: input.topic,
+      learning_language: input.learningLanguage,
       raw_sentence: input.rawSentence,
-      spanish_text: input.spanishText,
+      source_text: input.sourceText,
     })
     .returning("id")
     .executeTakeFirstOrThrow();
@@ -59,14 +74,15 @@ async function saveGeneratedSentence(input: {
   return row.id;
 }
 
-async function getRandomSavedSentence(): Promise<{ id: number; rawSentence: string } | null> {
+async function getRandomSavedSentence(learningLanguage: string): Promise<{ id: number; rawSentence: string } | null> {
   await ensureLearningTables();
   const db = getDb();
 
   const row = await db
     .selectFrom("sentence_translations")
     .select(["id", "raw_sentence"])
-    .where("spanish_text", "is not", null)
+    .where("learning_language", "=", learningLanguage)
+    .where("source_text", "is not", null)
     .orderBy(sql`RANDOM()`)
     .limit(1)
     .executeTakeFirst();
@@ -78,102 +94,107 @@ async function getRandomSavedSentence(): Promise<{ id: number; rawSentence: stri
   return { id: row.id, rawSentence: row.raw_sentence };
 }
 
-async function generateFromOpenAI(topic: string): Promise<{ rawSentence: string; spanishText: string } | null> {
-  const apiKey = process.env.OPEN_AI_KEY;
-
-  if (!apiKey) {
-    console.warn("Missing OpenAI API key, falling back to default sentence.");
-    return null;
-  }
-
-  const basePrompt = topic.trim();
-  const usePromptAsIs = basePrompt.length > 50;
-  const selectedPrompt = usePromptAsIs
-    ? basePrompt
-    : ENRICHING_PROMPT_BUILDERS[Math.floor(Math.random() * ENRICHING_PROMPT_BUILDERS.length)](
-      basePrompt || "everyday life",
-    );
-  const firstPrompt = `You are helping Spanish learners. Write an interesting Spanish text based on this prompt: "${selectedPrompt}". Return JSON only with key "spanishText".`;
-
-  async function requestOpenAIJson<T>(input: {
-    prompt: string;
-    schemaName: string;
-    schema: Record<string, unknown>;
-  }): Promise<T | null> {
-    const response = await fetch("https://api.openai.com/v1/responses", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${apiKey}`,
+async function requestOpenAiJson<T>(input: {
+  client: OpenAI;
+  systemPrompt: string;
+  userPrompt: string;
+  schemaName: string;
+  schema: Record<string, unknown>;
+  useWebSearch: boolean;
+}): Promise<T | null> {
+  const response = await input.client.responses.create({
+    model: "gpt-5.4-mini",
+    input: [
+      { role: "system", content: input.systemPrompt },
+      { role: "user", content: input.userPrompt },
+    ],
+    ...(input.useWebSearch ? { tools: [{ type: "web_search_preview" }] } : {}),
+    text: {
+      format: {
+        type: "json_schema",
+        name: input.schemaName,
+        schema: input.schema,
+        strict: true,
       },
-      body: JSON.stringify({
-        model: "gpt-5.4-mini",
-        input: input.prompt,
-        text: {
-          format: {
-            type: "json_schema",
-            name: input.schemaName,
-            schema: input.schema,
-            strict: true,
-          },
-        },
-      }),
-      cache: "no-store",
-    });
+    },
+  });
 
-    if (!response.ok) {
-      return null;
-    }
+  const outputText = response.output_text;
 
-    const json = await response.json();
-    const texts: string[] = [];
-
-    for (const outputItem of json.output ?? []) {
-      for (const item of outputItem.content) {
-        if (item.type === "output_text") {
-          texts.push(item.text);
-        }
-
-        if (item.type === "text") {
-          texts.push(item.value);
-        }
-      }
-    }
-
-    for (const text of texts) {
-      try {
-        return JSON.parse(text) as T;
-      } catch {
-        continue;
-      }
-    }
-
+  if (!outputText?.trim()) {
     return null;
   }
 
   try {
-    const firstResponse = await requestOpenAIJson<{ spanishText: string }>({
-      prompt: firstPrompt,
-      schemaName: "spanish_text_response",
+    return JSON.parse(outputText) as T;
+  } catch {
+    return null;
+  }
+}
+
+async function generateFromOpenAI(input: {
+  topic: string;
+  learningLanguage: string;
+  knownLanguage: string;
+}): Promise<{ rawSentence: string; sourceText: string } | null> {
+  const client = getOpenAiClient();
+
+  if (!client) {
+    console.warn("Missing OpenAI API key, falling back to default sentence.");
+    return null;
+  }
+
+  const learningLanguage = asSupportedLanguage(input.learningLanguage);
+  const knownLanguage = asSupportedLanguage(input.knownLanguage);
+  const learningLanguageLabel = LANGUAGE_LABELS[learningLanguage];
+  const knownLanguageLabel = LANGUAGE_LABELS[knownLanguage];
+
+  const generationSystemPrompt = [
+    `Respond to the user's prompt in ${learningLanguageLabel}.`,
+    "You must understand prompts and instructions even when users write in a different language.",
+    "If the user asks a question, answer helpfully.",
+    `If the user gives instructions, follow them while keeping the response in ${learningLanguageLabel}.`,
+    "If the user only gives a topic, create either a short story or a short dialogue around that topic with invented names when relevant.",
+    "Keep the response concise (2-5 sentences), clear, and learner-friendly.",
+    `Output valid JSON only with a single key named \"sourceText\" that contains the ${learningLanguageLabel} response.`,
+  ].join(" ");
+
+  try {
+    const firstResponse = await requestOpenAiJson<{ sourceText: string }>({
+      client,
+      systemPrompt: generationSystemPrompt,
+      userPrompt: input.topic,
+      schemaName: "source_text_response",
       schema: {
         type: "object",
         properties: {
-          spanishText: { type: "string" },
+          sourceText: { type: "string" },
         },
-        required: ["spanishText"],
+        required: ["sourceText"],
         additionalProperties: false,
       },
+      useWebSearch: true,
     });
-    const spanishText = firstResponse?.spanishText?.trim();
 
-    if (!spanishText) {
+    const sourceText = firstResponse?.sourceText?.trim();
+
+    if (!sourceText) {
       console.warn("OpenAI generation step failed, falling back to default sentence.");
       return null;
     }
 
-    const translationRequestPrompt = `Transform the following Spanish text into bilingual token format where every Spanish token is paired with an honest, literal English translation in the form (spanish|english). Do not merge tokens or smooth grammar for natural English. Keep token order and punctuation exactly as in Spanish, and if the literal English sounds unnatural, keep it anyway. Example: "me contaron" -> "(me|me) (contaron|they told)". Return JSON only with key "sentence". Spanish text: "${spanishText}"`;
-    const secondResponse = await requestOpenAIJson<{ sentence: string }>({
-      prompt: translationRequestPrompt,
+    const translationSystemPrompt = [
+      `Convert ${learningLanguageLabel} text into bilingual token format.`,
+      `Each token must be in this format: (${learningLanguageLabel}|${knownLanguageLabel}).`,
+      `Use honest, literal ${knownLanguageLabel} translations; do not smooth grammar for naturalness.`,
+      "Do not merge tokens. Keep token order and punctuation aligned to the source text.",
+      "Output valid JSON only with a single key named \"sentence\".",
+    ].join(" ");
+
+    const secondResponse = await requestOpenAiJson<{ sentence: string }>({
+      client,
+      systemPrompt: translationSystemPrompt,
+      userPrompt: sourceText,
       schemaName: "bilingual_sentence_response",
       schema: {
         type: "object",
@@ -183,21 +204,22 @@ async function generateFromOpenAI(topic: string): Promise<{ rawSentence: string;
         required: ["sentence"],
         additionalProperties: false,
       },
+      useWebSearch: false,
     });
 
-    if (!secondResponse?.sentence?.trim()) {
+    const sentence = secondResponse?.sentence?.trim();
+
+    if (!sentence) {
       console.warn("OpenAI translation step failed, falling back to default sentence.");
       return null;
     }
-
-    const sentence = secondResponse.sentence;
 
     if (parseBilingualSentence(sentence).length === 0) {
       console.warn("OpenAI returned an invalid bilingual format, falling back to default sentence.");
       return null;
     }
 
-    return { rawSentence: sentence, spanishText };
+    return { rawSentence: sentence, sourceText };
   } catch (e) {
     console.error("Error generating sentence from OpenAI:", e);
     return null;
@@ -205,33 +227,21 @@ async function generateFromOpenAI(topic: string): Promise<{ rawSentence: string;
 }
 
 async function generateSpeechFromOpenAI(text: string): Promise<Buffer | null> {
-  const apiKey = process.env.OPEN_AI_KEY;
+  const client = getOpenAiClient();
 
-  if (!apiKey) {
+  if (!client) {
     return null;
   }
 
   try {
-    const response = await fetch("https://api.openai.com/v1/audio/speech", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${apiKey}`,
-      },
-      body: JSON.stringify({
-        model: "gpt-4o-mini-tts",
-        voice: "alloy",
-        format: "mp3",
-        input: text,
-      }),
-      cache: "no-store",
+    const speechResponse = await client.audio.speech.create({
+      model: "gpt-4o-mini-tts",
+      voice: "alloy",
+      format: "mp3",
+      input: text,
     });
 
-    if (!response.ok) {
-      return null;
-    }
-
-    const arrayBuffer = await response.arrayBuffer();
+    const arrayBuffer = await speechResponse.arrayBuffer();
 
     if (arrayBuffer.byteLength === 0) {
       return null;
@@ -244,18 +254,23 @@ async function generateSpeechFromOpenAI(text: string): Promise<Buffer | null> {
   }
 }
 
-
-function fallbackSpanishSentence(topic: string): string {
+function fallbackSourceSentence(topic: string, learningLanguage: string): string {
   const normalized = topic.trim().toLowerCase();
 
-  if (normalized === "travel") {
-    return "Me gusta viajar en tren.";
+  if (learningLanguage === "de") {
+    if (normalized === "travel") return "Ich reise gern mit dem Zug.";
+    if (normalized === "food") return "Wir essen jeden Abend Suppe.";
+    return "Wie war dein Wochenende?";
   }
 
-  if (normalized === "food") {
-    return "Nosotros comemos sopa cada noche.";
+  if (learningLanguage === "en") {
+    if (normalized === "travel") return "I like traveling by train.";
+    if (normalized === "food") return "We eat soup every night.";
+    return "How was your weekend?";
   }
 
+  if (normalized === "travel") return "Me gusta viajar en tren.";
+  if (normalized === "food") return "Nosotros comemos sopa cada noche.";
   return "¿Cómo estuvo tu fin de semana?";
 }
 
@@ -323,21 +338,21 @@ async function createSentenceExerciseFromRawSentence(input: {
   sentenceId: number;
   sentence: string;
   userId: number;
+  learningLanguage: string;
+  knownLanguage: string;
 }): Promise<SentenceExercise> {
-  console.log("Generated AI sentence:", input.sentence);
-  const sentence = input.sentence;
-  const pairs = parseBilingualSentence(sentence);
+  const pairs = parseBilingualSentence(input.sentence);
 
   if (pairs.length === 0) {
-    throw new Error(`Could not generate a valid bilingual sentence from '${sentence}'`);
+    throw new Error(`Could not generate a valid bilingual sentence from '${input.sentence}'`);
   }
 
   const wordIdMap = await storeTranslationPairs(
     pairs.map((pair) => ({
       sourceWord: pair.source,
       targetWord: pair.target,
-      sourceLanguage: "es",
-      targetLanguage: "en",
+      sourceLanguage: input.learningLanguage,
+      targetLanguage: input.knownLanguage,
     })),
   );
 
@@ -398,7 +413,6 @@ async function createSentenceExerciseFromRawSentence(input: {
   return { sentenceId: input.sentenceId, tokens, questions };
 }
 
-
 async function warmSentenceAudioCache(sentenceId: number): Promise<void> {
   try {
     await getOrCreateSentenceAudioDataUrl({ sentenceId });
@@ -410,20 +424,25 @@ async function warmSentenceAudioCache(sentenceId: number): Promise<void> {
 export async function createSentenceExerciseFromPrompt(input: {
   topic: string;
   userId: number;
+  learningLanguage: string;
+  knownLanguage: string;
 }): Promise<SentenceExercise> {
-  const aiSentence = await generateFromOpenAI(input.topic);
+  const aiSentence = await generateFromOpenAI(input);
   const rawSentence = aiSentence?.rawSentence ?? fallbackSentence(input.topic);
-  const spanishText = aiSentence?.spanishText ?? fallbackSpanishSentence(input.topic);
+  const sourceText = aiSentence?.sourceText ?? fallbackSourceSentence(input.topic, input.learningLanguage);
   const sentenceId = await saveGeneratedSentence({
     topic: input.topic,
+    learningLanguage: input.learningLanguage,
     rawSentence,
-    spanishText,
+    sourceText,
   });
 
   const exercise = await createSentenceExerciseFromRawSentence({
     sentenceId,
     sentence: rawSentence,
     userId: input.userId,
+    learningLanguage: input.learningLanguage,
+    knownLanguage: input.knownLanguage,
   });
 
   await warmSentenceAudioCache(sentenceId);
@@ -434,8 +453,10 @@ export async function createSentenceExerciseFromPrompt(input: {
 export async function createSentenceExerciseFromRandomSentence(input: {
   topic: string;
   userId: number;
+  learningLanguage: string;
+  knownLanguage: string;
 }): Promise<SentenceExercise> {
-  const savedSentence = await getRandomSavedSentence();
+  const savedSentence = await getRandomSavedSentence(input.learningLanguage);
 
   if (!savedSentence) {
     return createSentenceExerciseFromPrompt(input);
@@ -445,6 +466,8 @@ export async function createSentenceExerciseFromRandomSentence(input: {
     sentenceId: savedSentence.id,
     sentence: savedSentence.rawSentence,
     userId: input.userId,
+    learningLanguage: input.learningLanguage,
+    knownLanguage: input.knownLanguage,
   });
 
   await warmSentenceAudioCache(savedSentence.id);
@@ -470,19 +493,15 @@ export async function getOrCreateSentenceAudioDataUrl(input: {
 
   const sentenceRow = await db
     .selectFrom("sentence_translations")
-    .select("spanish_text")
+    .select("source_text")
     .where("id", "=", input.sentenceId)
     .executeTakeFirst();
 
-  if (!sentenceRow) {
+  if (!sentenceRow?.source_text?.trim()) {
     return null;
   }
 
-  if (!sentenceRow.spanish_text?.trim()) {
-    return null;
-  }
-
-  const ttsAudio = await generateSpeechFromOpenAI(sentenceRow.spanish_text);
+  const ttsAudio = await generateSpeechFromOpenAI(sentenceRow.source_text);
 
   if (!ttsAudio) {
     return null;
