@@ -30,6 +30,8 @@ export function SentenceTraining({ exercise }: SentenceTrainingProps) {
   const [audioError, setAudioError] = useState<string | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const loadedSentenceIdRef = useRef<number | null>(null);
+  const trackRef = useRef<HTMLButtonElement | null>(null);
+  const restartTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     if (!audioRef.current) {
@@ -50,10 +52,34 @@ export function SentenceTraining({ exercise }: SentenceTrainingProps) {
     const handleEnded = () => {
       setIsPlaying(false);
       setPlaybackProgress(1);
+
+      if (restartTimeoutRef.current) {
+        clearTimeout(restartTimeoutRef.current);
+      }
+
+      restartTimeoutRef.current = setTimeout(async () => {
+        if (!audio.src) {
+          return;
+        }
+
+        audio.currentTime = 0;
+        setPlaybackProgress(0);
+
+        try {
+          await audio.play();
+        } catch {
+          setAudioError("Audio playback was blocked. Press play again to retry.");
+        }
+      }, 2000);
     };
 
     const handlePause = () => {
       setIsPlaying(false);
+
+      if (restartTimeoutRef.current) {
+        clearTimeout(restartTimeoutRef.current);
+        restartTimeoutRef.current = null;
+      }
     };
 
     const handlePlay = () => {
@@ -66,6 +92,11 @@ export function SentenceTraining({ exercise }: SentenceTrainingProps) {
     audio.addEventListener("play", handlePlay);
 
     return () => {
+      if (restartTimeoutRef.current) {
+        clearTimeout(restartTimeoutRef.current);
+        restartTimeoutRef.current = null;
+      }
+
       audio.pause();
       audio.currentTime = 0;
       audio.src = "";
@@ -86,11 +117,29 @@ export function SentenceTraining({ exercise }: SentenceTrainingProps) {
   const activeToken =
     activeQuestionIndex !== null ? exercise.tokens[activeQuestionIndex] : undefined;
 
+  const seekFromTrackClick = (event: React.MouseEvent<HTMLButtonElement>) => {
+    if (!audioRef.current || !audioRef.current.duration || !trackRef.current) {
+      return;
+    }
+
+    const bounds = trackRef.current.getBoundingClientRect();
+    const offsetY = Math.min(Math.max(event.clientY - bounds.top, 0), bounds.height);
+    const ratio = bounds.height === 0 ? 0 : offsetY / bounds.height;
+
+    audioRef.current.currentTime = ratio * audioRef.current.duration;
+    setPlaybackProgress(ratio);
+  };
+
   const togglePlayback = async () => {
     setAudioError(null);
 
     if (!audioRef.current) {
       return;
+    }
+
+    if (restartTimeoutRef.current) {
+      clearTimeout(restartTimeoutRef.current);
+      restartTimeoutRef.current = null;
     }
 
     if (isPlaying) {
@@ -137,9 +186,9 @@ export function SentenceTraining({ exercise }: SentenceTrainingProps) {
           >
             {isAudioPending ? "…" : isPlaying ? "❚❚" : "▶"}
           </button>
-          <div className={styles.playbackTrack}>
+          <button className={styles.playbackTrack} onClick={seekFromTrackClick} ref={trackRef} type="button">
             <div className={styles.playbackProgress} style={{ height: `${playbackProgress * 100}%` }} />
-          </div>
+          </button>
         </div>
 
         <div className={styles.sentenceLine}>

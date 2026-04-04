@@ -285,14 +285,17 @@
   position: relative;
   flex: 1;
   width: 8px;
+  border: 0;
+  padding: 0;
   border-radius: 999px;
   background: var(--surface-muted);
   overflow: hidden;
+  cursor: pointer;
 }
 
 .playbackProgress {
   position: absolute;
-  bottom: 0;
+  top: 0;
   left: 0;
   width: 100%;
   background: var(--accent);
