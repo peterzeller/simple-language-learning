@@ -39,6 +39,7 @@ interface SentenceTranslationsTable {
   id: Generated<number>;
   topic: string;
   raw_sentence: string;
+  spanish_text: string | null;
   created_at: Generated<TimestampColumn>;
 }
 
@@ -181,10 +182,16 @@ export async function ensureLearningTables(): Promise<void> {
       )
       .addColumn("topic", "text", (column) => column.notNull())
       .addColumn("raw_sentence", "text", (column) => column.notNull())
+      .addColumn("spanish_text", "text")
       .addColumn("created_at", "timestamptz", (column) =>
         column.notNull().defaultTo(sql`CURRENT_TIMESTAMP`),
       )
       .execute();
+
+    await sql`
+      ALTER TABLE sentence_translations
+      ADD COLUMN IF NOT EXISTS spanish_text text
+    `.execute(db);
 
     await db.schema
       .createTable("sentence_audio")

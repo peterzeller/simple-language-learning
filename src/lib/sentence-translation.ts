@@ -41,6 +41,7 @@ export interface SentenceExercise {
 async function saveGeneratedSentence(input: {
   topic: string;
   rawSentence: string;
+  spanishText: string;
 }): Promise<number> {
   await ensureLearningTables();
   const db = getDb();
@@ -50,6 +51,7 @@ async function saveGeneratedSentence(input: {
     .values({
       topic: input.topic,
       raw_sentence: input.rawSentence,
+      spanish_text: input.spanishText,
     })
     .returning("id")
     .executeTakeFirstOrThrow();
@@ -64,6 +66,7 @@ async function getRandomSavedSentence(): Promise<{ id: number; rawSentence: stri
   const row = await db
     .selectFrom("sentence_translations")
     .select(["id", "raw_sentence"])
+    .where("spanish_text", "is not", null)
     .orderBy(sql`RANDOM()`)
     .limit(1)
     .executeTakeFirst();
@@ -75,7 +78,7 @@ async function getRandomSavedSentence(): Promise<{ id: number; rawSentence: stri
   return { id: row.id, rawSentence: row.raw_sentence };
 }
 
-async function generateFromOpenAI(topic: string): Promise<string | null> {
+async function generateFromOpenAI(topic: string): Promise<{ rawSentence: string; spanishText: string } | null> {
   const apiKey = process.env.OPEN_AI_KEY;
 
   if (!apiKey) {
@@ -194,7 +197,7 @@ async function generateFromOpenAI(topic: string): Promise<string | null> {
       return null;
     }
 
-    return sentence;
+    return { rawSentence: sentence, spanishText };
   } catch (e) {
     console.error("Error generating sentence from OpenAI:", e);
     return null;
@@ -242,14 +245,18 @@ async function generateSpeechFromOpenAI(text: string): Promise<Buffer | null> {
 }
 
 
-function extractSpanishTextFromBilingualSentence(rawSentence: string): string {
-  const pairs = parseBilingualSentence(rawSentence);
+function fallbackSpanishSentence(topic: string): string {
+  const normalized = topic.trim().toLowerCase();
 
-  if (pairs.length === 0) {
-    return rawSentence;
+  if (normalized === "travel") {
+    return "Me gusta viajar en tren.";
   }
 
-  return pairs.map((pair) => pair.source).join("").trim() || rawSentence;
+  if (normalized === "food") {
+    return "Nosotros comemos sopa cada noche.";
+  }
+
+  return "¿Cómo estuvo tu fin de semana?";
 }
 
 function fallbackSentence(topic: string): string {
@@ -396,15 +403,17 @@ export async function createSentenceExerciseFromPrompt(input: {
   userId: number;
 }): Promise<SentenceExercise> {
   const aiSentence = await generateFromOpenAI(input.topic);
-  const sentence = aiSentence ?? fallbackSentence(input.topic);
+  const rawSentence = aiSentence?.rawSentence ?? fallbackSentence(input.topic);
+  const spanishText = aiSentence?.spanishText ?? fallbackSpanishSentence(input.topic);
   const sentenceId = await saveGeneratedSentence({
     topic: input.topic,
-    rawSentence: sentence,
+    rawSentence,
+    spanishText,
   });
 
   return createSentenceExerciseFromRawSentence({
     sentenceId,
-    sentence,
+    sentence: rawSentence,
     userId: input.userId,
   });
 }
@@ -444,7 +453,7 @@ export async function getOrCreateSentenceAudioDataUrl(input: {
 
   const sentenceRow = await db
     .selectFrom("sentence_translations")
-    .select("raw_sentence")
+    .select("spanish_text")
     .where("id", "=", input.sentenceId)
     .executeTakeFirst();
 
@@ -452,8 +461,11 @@ export async function getOrCreateSentenceAudioDataUrl(input: {
     return null;
   }
 
-  const spanishText = extractSpanishTextFromBilingualSentence(sentenceRow.raw_sentence);
-  const ttsAudio = await generateSpeechFromOpenAI(spanishText);
+  if (!sentenceRow.spanish_text?.trim()) {
+    return null;
+  }
+
+  const ttsAudio = await generateSpeechFromOpenAI(sentenceRow.spanish_text);
 
   if (!ttsAudio) {
     return null;
