@@ -94,6 +94,28 @@ async function getRandomSavedSentence(learningLanguage: string): Promise<{ id: n
   return { id: row.id, rawSentence: row.raw_sentence };
 }
 
+async function getSavedSentenceById(input: {
+  sentenceId: number;
+  learningLanguage: string;
+}): Promise<{ id: number; rawSentence: string } | null> {
+  await ensureLearningTables();
+  const db = getDb();
+
+  const row = await db
+    .selectFrom("sentence_translations")
+    .select(["id", "raw_sentence"])
+    .where("id", "=", input.sentenceId)
+    .where("learning_language", "=", input.learningLanguage)
+    .where("source_text", "is not", null)
+    .executeTakeFirst();
+
+  if (!row) {
+    return null;
+  }
+
+  return { id: row.id, rawSentence: row.raw_sentence };
+}
+
 async function requestOpenAiJson<T>(input: {
   client: OpenAI;
   systemPrompt: string;
@@ -545,6 +567,35 @@ export async function createSentenceExerciseFromRandomSentence(input: {
 
   if (!savedSentence) {
     return createSentenceExerciseFromPrompt(input);
+  }
+
+  const exercise = await createSentenceExerciseFromRawSentence({
+    sentenceId: savedSentence.id,
+    sentence: savedSentence.rawSentence,
+    userId: input.userId,
+    learningLanguage: input.learningLanguage,
+    knownLanguage: input.knownLanguage,
+  });
+
+  await warmSentenceAudioCache(savedSentence.id);
+
+  return exercise;
+}
+
+export async function createSentenceExerciseFromSentenceId(input: {
+  sentenceId: number;
+  topic: string;
+  userId: number;
+  learningLanguage: string;
+  knownLanguage: string;
+}): Promise<SentenceExercise> {
+  const savedSentence = await getSavedSentenceById({
+    sentenceId: input.sentenceId,
+    learningLanguage: input.learningLanguage,
+  });
+
+  if (!savedSentence) {
+    return createSentenceExerciseFromRandomSentence(input);
   }
 
   const exercise = await createSentenceExerciseFromRawSentence({
