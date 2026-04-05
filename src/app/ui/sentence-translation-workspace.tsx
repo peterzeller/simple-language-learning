@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useEffect, useState, useTransition } from "react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useTranslations } from "next-intl";
 
 import styles from "@/app/auth.module.css";
@@ -18,9 +19,24 @@ interface SentenceTranslationWorkspaceProps {
 
 export function SentenceTranslationWorkspace({ initialExercise, initialTopic }: SentenceTranslationWorkspaceProps) {
   const t = useTranslations();
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
   const [topic, setTopic] = useState(initialTopic);
   const [exercise, setExercise] = useState(initialExercise);
   const [isPending, startTransition] = useTransition();
+
+  useEffect(() => {
+    const params = new URLSearchParams(searchParams.toString());
+
+    if (params.get("sentenceId") === String(exercise.sentenceId)) {
+      return;
+    }
+
+    params.set("sentenceId", String(exercise.sentenceId));
+    const nextQuery = params.toString();
+    router.replace(nextQuery ? `${pathname}?${nextQuery}` : pathname, { scroll: false });
+  }, [exercise.sentenceId, pathname, router, searchParams]);
 
   const fetchExercise = (mode: "prompt" | "random") => {
     startTransition(async () => {
