@@ -314,6 +314,12 @@
   gap: 8px;
 }
 
+.sentenceSeparator {
+  white-space: pre-wrap;
+  font-size: 1.2rem;
+  line-height: 1.8;
+}
+
 .wordCard {
   border: 1px solid var(--surface-elevated);
   border-radius: 10px;

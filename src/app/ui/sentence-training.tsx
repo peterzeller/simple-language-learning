@@ -284,6 +284,14 @@ export function SentenceTraining({ exercise }: SentenceTrainingProps) {
 
         <div className={styles.sentenceLine}>
           {exercise.tokens.map((token, index) => {
+            if (token.isSeparator) {
+              return (
+                <span className={styles.sentenceSeparator} key={`${token.source}-${index}`}>
+                  {token.source}
+                </span>
+              );
+            }
+
             const question = questionByIndex.get(index);
             const answer = answers[index];
             const shouldReveal = !token.isQuestion && (token.revealByDefault || revealedWords[index]);

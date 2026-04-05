@@ -10,7 +10,11 @@ import {
   normalizeWord,
   storeTranslationPairs,
 } from "@/lib/learning";
-import { parseBilingualSentence } from "@/lib/parse-bilingual-sentence";
+import {
+  CURRENT_TRANSLATION_FORMAT_VERSION,
+  isBilingualWordSegment,
+  parseBilingualSentence,
+} from "@/lib/parse-bilingual-sentence";
 
 export interface SentenceToken {
   source: string;
@@ -19,6 +23,7 @@ export interface SentenceToken {
   isKnown: boolean;
   revealByDefault: boolean;
   isQuestion: boolean;
+  isSeparator: boolean;
 }
 
 export interface SentenceQuestion {
@@ -74,13 +79,18 @@ async function saveGeneratedSentence(input: {
   return row.id;
 }
 
-async function getRandomSavedSentence(learningLanguage: string): Promise<{ id: number; rawSentence: string } | null> {
+async function getRandomSavedSentence(learningLanguage: string): Promise<{
+  id: number;
+  topic: string;
+  rawSentence: string;
+  sourceText: string;
+} | null> {
   await ensureLearningTables();
   const db = getDb();
 
   const row = await db
     .selectFrom("sentence_translations")
-    .select(["id", "raw_sentence"])
+    .select(["id", "topic", "raw_sentence", "source_text"])
     .where("learning_language", "=", learningLanguage)
     .where("source_text", "is not", null)
     .orderBy(sql`RANDOM()`)
@@ -91,7 +101,29 @@ async function getRandomSavedSentence(learningLanguage: string): Promise<{ id: n
     return null;
   }
 
-  return { id: row.id, rawSentence: row.raw_sentence };
+  if (!row.source_text) {
+    return null;
+  }
+
+  return { id: row.id, topic: row.topic, rawSentence: row.raw_sentence, sourceText: row.source_text };
+}
+
+async function updateSavedSentenceTranslation(input: { sentenceId: number; rawSentence: string }): Promise<void> {
+  await ensureLearningTables();
+  const db = getDb();
+
+  await db
+    .updateTable("sentence_translations")
+    .set({ raw_sentence: input.rawSentence })
+    .where("id", "=", input.sentenceId)
+    .execute();
+}
+
+function buildStoredSentence(segments: Array<string | { original: string; translation: string }>): string {
+  return JSON.stringify({
+    version: CURRENT_TRANSLATION_FORMAT_VERSION,
+    segments,
+  });
 }
 
 async function requestOpenAiJson<T>(input: {
@@ -130,6 +162,84 @@ async function requestOpenAiJson<T>(input: {
   } catch {
     return null;
   }
+}
+
+async function translateSourceTextToRawSentence(input: {
+  client: OpenAI;
+  sourceText: string;
+  learningLanguageLabel: string;
+  knownLanguageLabel: string;
+}): Promise<string | null> {
+  const translationSystemPrompt = [
+    `Extract ${input.learningLanguageLabel} words and translate each one to ${input.knownLanguageLabel}.`,
+    "Only include word tokens; punctuation and whitespace are not tokens.",
+    `Use honest, literal ${input.knownLanguageLabel} translations; do not smooth grammar for naturalness.`,
+    "Return valid JSON with one key named \"tokens\" and an array of objects.",
+    "Each object must have keys \"original\" and \"translation\".",
+    "Use ⟪ and ⟫ as internal delimiters if you need notes, never parentheses or pipes.",
+  ].join(" ");
+
+  const secondResponse = await requestOpenAiJson<{ tokens: Array<{ original: string; translation: string }> }>({
+    client: input.client,
+    systemPrompt: translationSystemPrompt,
+    userPrompt: input.sourceText,
+    schemaName: "bilingual_sentence_response",
+    schema: {
+      type: "object",
+      properties: {
+        tokens: {
+          type: "array",
+          items: {
+            type: "object",
+            properties: {
+              original: { type: "string" },
+              translation: { type: "string" },
+            },
+            required: ["original", "translation"],
+            additionalProperties: false,
+          },
+        },
+      },
+      required: ["tokens"],
+      additionalProperties: false,
+    },
+    useWebSearch: false,
+  });
+
+  const tokens = secondResponse?.tokens;
+  if (!tokens?.length) {
+    return null;
+  }
+
+  const wordMatches = Array.from(input.sourceText.matchAll(/\p{L}+/gu));
+  if (wordMatches.length !== tokens.length) {
+    return null;
+  }
+
+  const sentenceSegments: Array<string | { original: string; translation: string }> = [];
+  let cursor = 0;
+  for (let index = 0; index < wordMatches.length; index += 1) {
+    const match = wordMatches[index];
+    const originalWord = match[0];
+    const translation = tokens[index]?.translation?.trim();
+
+    if (!translation) {
+      return null;
+    }
+
+    if (match.index > cursor) {
+      sentenceSegments.push(input.sourceText.slice(cursor, match.index));
+    }
+
+    sentenceSegments.push({ original: originalWord, translation });
+    cursor = match.index + originalWord.length;
+  }
+
+  if (cursor < input.sourceText.length) {
+    sentenceSegments.push(input.sourceText.slice(cursor));
+  }
+
+  return buildStoredSentence(sentenceSegments);
 }
 
 async function generateFromOpenAI(input: {
@@ -183,39 +293,15 @@ async function generateFromOpenAI(input: {
       return null;
     }
 
-    const translationSystemPrompt = [
-      `Convert ${learningLanguageLabel} text into bilingual token format.`,
-      `Each token must be in this format: (${learningLanguageLabel}|${knownLanguageLabel}).`,
-      `Use honest, literal ${knownLanguageLabel} translations; do not smooth grammar for naturalness.`,
-      "Do not merge tokens. Keep token order and punctuation aligned to the source text.",
-      "Output valid JSON only with a single key named \"sentence\".",
-    ].join(" ");
-
-    const secondResponse = await requestOpenAiJson<{ sentence: string }>({
+    const sentence = await translateSourceTextToRawSentence({
       client,
-      systemPrompt: translationSystemPrompt,
-      userPrompt: sourceText,
-      schemaName: "bilingual_sentence_response",
-      schema: {
-        type: "object",
-        properties: {
-          sentence: { type: "string" },
-        },
-        required: ["sentence"],
-        additionalProperties: false,
-      },
-      useWebSearch: false,
+      sourceText,
+      learningLanguageLabel,
+      knownLanguageLabel,
     });
-
-    const sentence = secondResponse?.sentence?.trim();
 
     if (!sentence) {
       console.warn("OpenAI translation step failed, falling back to default sentence.");
-      return null;
-    }
-
-    if (parseBilingualSentence(sentence).length === 0) {
-      console.warn("OpenAI returned an invalid bilingual format, falling back to default sentence.");
       return null;
     }
 
@@ -336,14 +422,50 @@ function fallbackSentence(topic: string): string {
   const normalized = topic.trim().toLowerCase();
 
   if (normalized === "travel") {
-    return "(Me|I) (gusta|like) (viajar|to travel) (en|in) (tren|train).";
+    return buildStoredSentence([
+      { original: "Me", translation: "I" },
+      " ",
+      { original: "gusta", translation: "like" },
+      " ",
+      { original: "viajar", translation: "to travel" },
+      " ",
+      { original: "en", translation: "in" },
+      " ",
+      { original: "tren", translation: "train" },
+      ".",
+    ]);
   }
 
   if (normalized === "food") {
-    return "(Nosotros|We) (comemos|eat) (sopa|soup) (cada|every) (noche|night).";
+    return buildStoredSentence([
+      { original: "Nosotros", translation: "We" },
+      " ",
+      { original: "comemos", translation: "eat" },
+      " ",
+      { original: "sopa", translation: "soup" },
+      " ",
+      { original: "cada", translation: "every" },
+      " ",
+      { original: "noche", translation: "night" },
+      ".",
+    ]);
   }
 
-  return "¿(Cómo|How) (estuvo|was) (tu|your) (fin|end) (de|of) (semana|week)?";
+  return buildStoredSentence([
+    "¿",
+    { original: "Cómo", translation: "How" },
+    " ",
+    { original: "estuvo", translation: "was" },
+    " ",
+    { original: "tu", translation: "your" },
+    " ",
+    { original: "fin", translation: "end" },
+    " ",
+    { original: "de", translation: "of" },
+    " ",
+    { original: "semana", translation: "week" },
+    "?",
+  ]);
 }
 
 function getQuestionIndexesByKnowledgeScore(input: {
@@ -399,7 +521,12 @@ async function createSentenceExerciseFromRawSentence(input: {
   learningLanguage: string;
   knownLanguage: string;
 }): Promise<SentenceExercise> {
-  const pairs = parseBilingualSentence(input.sentence);
+  const parsedSentence = parseBilingualSentence(input.sentence);
+  if (!parsedSentence || parsedSentence.version !== CURRENT_TRANSLATION_FORMAT_VERSION) {
+    throw new Error("Stored sentence translation format version is unsupported.");
+  }
+
+  const pairs = parsedSentence.segments.filter(isBilingualWordSegment);
 
   if (pairs.length === 0) {
     throw new Error(`Could not generate a valid bilingual sentence from '${input.sentence}'`);
@@ -439,6 +566,7 @@ async function createSentenceExerciseFromRawSentence(input: {
       isKnown: knownWordIds.has(wordId),
       revealByDefault: score === undefined || score === 0,
       isQuestion: false,
+      isSeparator: false,
     };
   });
 
@@ -468,7 +596,53 @@ async function createSentenceExerciseFromRawSentence(input: {
     };
   });
 
-  return { sentenceId: input.sentenceId, tokens, questions };
+  const wordTokensBySource = new Map<string, SentenceToken[]>();
+  for (const token of tokens) {
+    const queue = wordTokensBySource.get(token.source) ?? [];
+    queue.push(token);
+    wordTokensBySource.set(token.source, queue);
+  }
+
+  const renderedIndexByWordToken = new Map<SentenceToken, number>();
+  const renderedTokens: SentenceToken[] = parsedSentence.segments.map((segment, renderedIndex) => {
+    if (typeof segment === "string") {
+      return {
+        source: segment,
+        target: "",
+        wordId: 0,
+        isKnown: true,
+        revealByDefault: true,
+        isQuestion: false,
+        isSeparator: true,
+      };
+    }
+
+    const queue = wordTokensBySource.get(segment.source);
+    const token = queue?.shift();
+
+    if (!token) {
+      throw new Error("Missing rendered token while reconstructing sentence.");
+    }
+
+    renderedIndexByWordToken.set(token, renderedIndex);
+    return token;
+  });
+
+  const renderedQuestions = questions
+    .map((question) => {
+      const renderedTokenIndex = renderedIndexByWordToken.get(tokens[question.tokenIndex]);
+      if (renderedTokenIndex === undefined) {
+        return null;
+      }
+
+      return {
+        ...question,
+        tokenIndex: renderedTokenIndex,
+      };
+    })
+    .filter((question): question is SentenceQuestion => question !== null);
+
+  return { sentenceId: input.sentenceId, tokens: renderedTokens, questions: renderedQuestions };
 }
 
 async function warmSentenceAudioCache(sentenceId: number): Promise<void> {
@@ -520,9 +694,34 @@ export async function createSentenceExerciseFromRandomSentence(input: {
     return createSentenceExerciseFromPrompt(input);
   }
 
+  let rawSentence = savedSentence.rawSentence;
+  const parsedSentence = parseBilingualSentence(rawSentence);
+  if (!parsedSentence || parsedSentence.version !== CURRENT_TRANSLATION_FORMAT_VERSION) {
+    const client = getOpenAiClient();
+    const learningLanguage = asSupportedLanguage(input.learningLanguage);
+    const knownLanguage = asSupportedLanguage(input.knownLanguage);
+    const learningLanguageLabel = LANGUAGE_LABELS[learningLanguage];
+    const knownLanguageLabel = LANGUAGE_LABELS[knownLanguage];
+
+    const translated = client
+      ? await translateSourceTextToRawSentence({
+        client,
+        sourceText: savedSentence.sourceText,
+        learningLanguageLabel,
+        knownLanguageLabel,
+      })
+      : null;
+
+    rawSentence = translated ?? fallbackSentence(savedSentence.topic);
+    await updateSavedSentenceTranslation({
+      sentenceId: savedSentence.id,
+      rawSentence,
+    });
+  }
+
   const exercise = await createSentenceExerciseFromRawSentence({
     sentenceId: savedSentence.id,
-    sentence: savedSentence.rawSentence,
+    sentence: rawSentence,
     userId: input.userId,
     learningLanguage: input.learningLanguage,
     knownLanguage: input.knownLanguage,

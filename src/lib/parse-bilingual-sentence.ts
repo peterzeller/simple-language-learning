@@ -1,59 +1,76 @@
+export const CURRENT_TRANSLATION_FORMAT_VERSION = 2;
+
 export interface BilingualSentencePair {
   source: string;
   target: string;
 }
 
-// Parses a sentence expected to have repeated "(source|target)" segments.
-export function parseBilingualSentence(sentence: string): BilingualSentencePair[] {
-  let inParentheses = false;
-  let afterBar = false;
-  let currentBeforeParentheses = "";
-  let currentSource = "";
-  let currentTarget = "";
-  const result: BilingualSentencePair[] = [];
+export type BilingualSentenceSegment = BilingualSentencePair | string;
 
-  for (const char of sentence) {
-    if (char === "(") {
-      inParentheses = true;
-      afterBar = false;
-      currentSource = "";
-      currentTarget = "";
-    } else if (char === ")") {
-      if (inParentheses) {
-        if (currentTarget) {
-          result.push({ source: currentBeforeParentheses + currentSource, target: currentTarget.trim() });
-        } else {
-          result.push({ source: currentBeforeParentheses, target: currentSource.trim() });
-        }
-        inParentheses = false;
-        afterBar = false;
-        currentBeforeParentheses = "";
-        currentSource = "";
-        currentTarget = "";
-      } else {
-        currentBeforeParentheses += char;
-      }
-    } else if (inParentheses) {
-      if (char === "|") {
-        afterBar = true;
-        continue;
-      }
-      if (afterBar) {
-        currentTarget += char;
-      } else {
-        currentSource += char;
-      }
-    } else {
-      if (char == '|') {
-        continue;
-      }
-      currentBeforeParentheses += char;
+interface ParsedBilingualWord {
+  original: string;
+  translation: string;
+}
+
+interface ParsedBilingualSentence {
+  version: number;
+  segments: unknown[];
+}
+
+function isParsedBilingualWord(value: unknown): value is ParsedBilingualWord {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+
+  const candidate = value as Partial<ParsedBilingualWord>;
+  return typeof candidate.original === "string" && typeof candidate.translation === "string";
+}
+
+function parseStoredSentence(value: unknown): ParsedBilingualSentence | null {
+  if (!value || typeof value !== "object") {
+    return null;
+  }
+
+  const candidate = value as Partial<ParsedBilingualSentence>;
+  if (typeof candidate.version !== "number" || !Array.isArray(candidate.segments)) {
+    return null;
+  }
+
+  return {
+    version: candidate.version,
+    segments: candidate.segments,
+  };
+}
+
+export function parseBilingualSentence(sentence: string): { version: number; segments: BilingualSentenceSegment[] } | null {
+  try {
+    const parsed = parseStoredSentence(JSON.parse(sentence));
+
+    if (!parsed) {
+      return null;
     }
-  }
 
-  if (currentBeforeParentheses) {
-    result.push({ source: currentBeforeParentheses, target: "" });
-  }
+    const segments: BilingualSentenceSegment[] = [];
 
-  return result;
+    for (const item of parsed.segments) {
+      if (typeof item === "string") {
+        segments.push(item);
+        continue;
+      }
+
+      if (!isParsedBilingualWord(item)) {
+        return null;
+      }
+
+      segments.push({ source: item.original.trim(), target: item.translation.trim() });
+    }
+
+    return { version: parsed.version, segments };
+  } catch {
+    return null;
+  }
+}
+
+export function isBilingualWordSegment(segment: BilingualSentenceSegment): segment is BilingualSentencePair {
+  return typeof segment !== "string";
 }
