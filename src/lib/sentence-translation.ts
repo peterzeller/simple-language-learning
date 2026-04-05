@@ -101,6 +101,7 @@ async function requestOpenAiJson<T>(input: {
   schemaName: string;
   schema: Record<string, unknown>;
   useWebSearch: boolean;
+  verbosity?: "low" | "medium" | "high";
 }): Promise<T | null> {
   const response = await input.client.responses.create({
     model: "gpt-5.4-mini",
@@ -110,6 +111,7 @@ async function requestOpenAiJson<T>(input: {
     ],
     ...(input.useWebSearch ? { tools: [{ type: "web_search_preview" }] } : {}),
     text: {
+      ...(input.verbosity ? { verbosity: input.verbosity } : {}),
       format: {
         type: "json_schema",
         name: input.schemaName,
@@ -154,8 +156,13 @@ async function generateFromOpenAI(input: {
     "You must understand prompts and instructions even when users write in a different language.",
     "If the user asks a question, answer helpfully.",
     `If the user gives instructions, follow them while keeping the response in ${learningLanguageLabel}.`,
-    "If the user only gives a topic, create either a short story or a short dialogue around that topic with invented names when relevant.",
-    "Keep the response concise (2-5 sentences), clear, and learner-friendly.",
+    "Do not ask the user follow-up questions, clarifying questions, or any interactive prompts.",
+    "Treat this as a non-interactive, single-turn session and provide a complete response in one go.",
+    "If the user only gives a topic, create either a story or a dialogue around that topic with invented names when relevant.",
+    "Prefer rich narratives with momentum and scene changes instead of shallow summaries.",
+    "Include at least one surprising detail, twist, or little-known fact to keep the story interesting.",
+    "Target 500-2000 words unless the user explicitly asks for a different length.",
+    "Keep language learner-friendly: mostly high-frequency vocabulary with occasional useful stretch words.",
     `Output valid JSON only with a single key named \"sourceText\" that contains the ${learningLanguageLabel} response.`,
   ].join(" ");
 
@@ -174,6 +181,7 @@ async function generateFromOpenAI(input: {
         additionalProperties: false,
       },
       useWebSearch: true,
+      verbosity: "high",
     });
 
     const sourceText = firstResponse?.sourceText?.trim();
