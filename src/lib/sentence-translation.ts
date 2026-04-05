@@ -163,6 +163,7 @@ async function generateFromOpenAI(input: {
     "Include at least one surprising detail, twist, or little-known fact to keep the story interesting.",
     "Target 500-2000 words unless the user explicitly asks for a different length.",
     "Keep language learner-friendly: mostly high-frequency vocabulary with occasional useful stretch words.",
+    "If the requested language is Korean, write Korean using Latin characters (Revised Romanization style) and do not use Hangul.",
     `Output valid JSON only with a single key named \"sourceText\" that contains the ${learningLanguageLabel} response.`,
   ].join(" ");
 
@@ -323,6 +324,12 @@ function toAudioDataUrl(value: Buffer | Uint8Array | string): string {
 function fallbackSourceSentence(topic: string, learningLanguage: string): string {
   const normalized = topic.trim().toLowerCase();
 
+  if (learningLanguage === "ko") {
+    if (normalized === "travel") return "Naneun gicha yeohaengeul joahae.";
+    if (normalized === "food") return "Urineun maeil bam supeureul meogeoyo.";
+    return "Neo ju-mareul jal bonaenna?";
+  }
+
   if (learningLanguage === "de") {
     if (normalized === "travel") return "Ich reise gern mit dem Zug.";
     if (normalized === "food") return "Wir essen jeden Abend Suppe.";
@@ -340,8 +347,20 @@ function fallbackSourceSentence(topic: string, learningLanguage: string): string
   return "¿Cómo estuvo tu fin de semana?";
 }
 
-function fallbackSentence(topic: string): string {
+function fallbackSentence(topic: string, learningLanguage: string): string {
   const normalized = topic.trim().toLowerCase();
+
+  if (learningLanguage === "ko") {
+    if (normalized === "travel") {
+      return "(Naneun|I) (gicha|train) (yeohaengeul|travel) (joahae|like).";
+    }
+
+    if (normalized === "food") {
+      return "(Urineun|We) (maeil|every day) (bam|night) (supeureul|soup) (meogeoyo|eat).";
+    }
+
+    return "(Neo|You) (ju-mareul|weekend) (jal|well) (bonaenna|spent)?";
+  }
 
   if (normalized === "travel") {
     return "(Me|I) (gusta|like) (viajar|to travel) (en|in) (tren|train).";
@@ -494,7 +513,7 @@ export async function createSentenceExerciseFromPrompt(input: {
   knownLanguage: string;
 }): Promise<SentenceExercise> {
   const aiSentence = await generateFromOpenAI(input);
-  const rawSentence = aiSentence?.rawSentence ?? fallbackSentence(input.topic);
+  const rawSentence = aiSentence?.rawSentence ?? fallbackSentence(input.topic, input.learningLanguage);
   const sourceText = aiSentence?.sourceText ?? fallbackSourceSentence(input.topic, input.learningLanguage);
   const sentenceId = await saveGeneratedSentence({
     topic: input.topic,
