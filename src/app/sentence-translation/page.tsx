@@ -4,11 +4,14 @@ import { redirect } from "next/navigation";
 import styles from "@/app/auth.module.css";
 import { SentenceTranslationWorkspace } from "@/app/ui/sentence-translation-workspace";
 import { getCurrentUser } from "@/lib/auth";
-import { createSentenceExerciseFromRandomSentence } from "@/lib/sentence-translation";
+import {
+  createSentenceExerciseFromRandomSentence,
+  createSentenceExerciseFromSentenceId,
+} from "@/lib/sentence-translation";
 import { getTranslations } from "@/i18n";
 
 interface SentenceTranslationPageProps {
-  searchParams: Promise<{ topic?: string | string[] }>;
+  searchParams: Promise<{ topic?: string | string[]; sentenceId?: string | string[] }>;
 }
 
 function normalizeTopic(value: string | string[] | undefined): string {
@@ -31,12 +34,23 @@ export default async function SentenceTranslationPage({
 
   const params = await searchParams;
   const topic = normalizeTopic(params.topic) || t("sentence.defaultTopic");
-  const exercise = await createSentenceExerciseFromRandomSentence({
-    topic,
-    userId: user.id,
-    learningLanguage: user.learningLanguage,
-    knownLanguage: user.knownLanguage,
-  });
+  const sentenceIdParam = normalizeTopic(params.sentenceId);
+  const sentenceId = Number(sentenceIdParam);
+  const hasRequestedSentenceId = Number.isInteger(sentenceId) && sentenceId > 0;
+  const exercise = hasRequestedSentenceId
+    ? await createSentenceExerciseFromSentenceId({
+        sentenceId,
+        topic,
+        userId: user.id,
+        learningLanguage: user.learningLanguage,
+        knownLanguage: user.knownLanguage,
+      })
+    : await createSentenceExerciseFromRandomSentence({
+        topic,
+        userId: user.id,
+        learningLanguage: user.learningLanguage,
+        knownLanguage: user.knownLanguage,
+      });
 
   return (
     <main className={styles.page}>
