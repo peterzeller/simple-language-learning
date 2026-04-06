@@ -160,7 +160,7 @@ async function generateFromOpenAI(input: {
   topic: string;
   learningLanguage: string;
   knownLanguage: string;
-}): Promise<{ rawSentence: string; sourceText: string } | null> {
+}): Promise<{ rawSentence: string; sourceText: string; sourceTextAudioPromise: Promise<Buffer | null> } | null> {
   const client = getOpenAiClient();
 
   if (!client) {
@@ -213,6 +213,7 @@ async function generateFromOpenAI(input: {
       console.warn("OpenAI generation step failed, falling back to default sentence.");
       return null;
     }
+    const sourceTextAudioPromise = generateSpeechFromOpenAI(sourceText);
 
     const translationSystemPrompt = [
       `Convert ${learningLanguageLabel} text into bilingual token format.`,
@@ -250,14 +251,16 @@ async function generateFromOpenAI(input: {
       return null;
     }
 
-    return { rawSentence: sentence, sourceText };
+    return { rawSentence: sentence, sourceText, sourceTextAudioPromise };
   } catch (e) {
     console.error("Error generating sentence from OpenAI:", e);
     return null;
   }
 }
 
-async function generateSpeechFromOpenAI(text: string): Promise<Buffer | null> {
+const inFlightSpeechGenerationByText = new Map<string, Promise<Buffer | null>>();
+
+async function requestSpeechFromOpenAI(text: string): Promise<Buffer | null> {
   const client = getOpenAiClient();
 
   if (!client) {
@@ -283,6 +286,30 @@ async function generateSpeechFromOpenAI(text: string): Promise<Buffer | null> {
     console.error("Error generating TTS audio from OpenAI:", error);
     return null;
   }
+}
+
+function generateSpeechFromOpenAI(text: string): Promise<Buffer | null> {
+  const normalizedText = text.trim();
+
+  if (!normalizedText) {
+    return Promise.resolve(null);
+  }
+
+  const inFlightGeneration = inFlightSpeechGenerationByText.get(normalizedText);
+
+  if (inFlightGeneration) {
+    return inFlightGeneration;
+  }
+
+  const generationPromise = requestSpeechFromOpenAI(normalizedText);
+  inFlightSpeechGenerationByText.set(normalizedText, generationPromise);
+  generationPromise.finally(() => {
+    if (inFlightSpeechGenerationByText.get(normalizedText) === generationPromise) {
+      inFlightSpeechGenerationByText.delete(normalizedText);
+    }
+  }).catch(() => undefined);
+
+  return generationPromise;
 }
 
 function asAudioBuffer(value: Buffer | Uint8Array | string): Buffer {
@@ -520,9 +547,17 @@ async function createSentenceExerciseFromRawSentence(input: {
   return { sentenceId: input.sentenceId, tokens, questions };
 }
 
-async function warmSentenceAudioCache(sentenceId: number): Promise<void> {
+async function warmSentenceAudioCache(input: {
+  sentenceId: number;
+  sourceText?: string;
+  preGeneratedAudio?: Promise<Buffer | null>;
+}): Promise<void> {
   try {
-    await getOrCreateSentenceAudioDataUrl({ sentenceId });
+    await getOrCreateSentenceAudio({
+      sentenceId: input.sentenceId,
+      sourceText: input.sourceText,
+      preGeneratedAudio: input.preGeneratedAudio,
+    });
   } catch (error) {
     console.warn("Failed to warm sentence audio cache:", error);
   }
@@ -537,6 +572,7 @@ export async function createSentenceExerciseFromPrompt(input: {
   const aiSentence = await generateFromOpenAI(input);
   const rawSentence = aiSentence?.rawSentence ?? fallbackSentence(input.topic, input.learningLanguage);
   const sourceText = aiSentence?.sourceText ?? fallbackSourceSentence(input.topic, input.learningLanguage);
+  const sourceTextAudioPromise = aiSentence?.sourceTextAudioPromise ?? generateSpeechFromOpenAI(sourceText);
   const sentenceId = await saveGeneratedSentence({
     topic: input.topic,
     learningLanguage: input.learningLanguage,
@@ -552,7 +588,11 @@ export async function createSentenceExerciseFromPrompt(input: {
     knownLanguage: input.knownLanguage,
   });
 
-  await warmSentenceAudioCache(sentenceId);
+  void warmSentenceAudioCache({
+    sentenceId,
+    sourceText,
+    preGeneratedAudio: sourceTextAudioPromise,
+  });
 
   return exercise;
 }
@@ -577,7 +617,7 @@ export async function createSentenceExerciseFromRandomSentence(input: {
     knownLanguage: input.knownLanguage,
   });
 
-  await warmSentenceAudioCache(savedSentence.id);
+  void warmSentenceAudioCache({ sentenceId: savedSentence.id });
 
   return exercise;
 }
@@ -606,13 +646,15 @@ export async function createSentenceExerciseFromSentenceId(input: {
     knownLanguage: input.knownLanguage,
   });
 
-  await warmSentenceAudioCache(savedSentence.id);
+  void warmSentenceAudioCache({ sentenceId: savedSentence.id });
 
   return exercise;
 }
 
 export async function getOrCreateSentenceAudio(input: {
   sentenceId: number;
+  sourceText?: string;
+  preGeneratedAudio?: Promise<Buffer | null>;
 }): Promise<{ audio: Buffer; mimeType: string } | null> {
   await ensureLearningTables();
   const db = getDb();
@@ -632,17 +674,25 @@ export async function getOrCreateSentenceAudio(input: {
     };
   }
 
-  const sentenceRow = await db
-    .selectFrom("sentence_translations")
-    .select("source_text")
-    .where("id", "=", input.sentenceId)
-    .executeTakeFirst();
+  const sourceTextFromInput = input.sourceText?.trim();
+  let sourceText = sourceTextFromInput;
 
-  if (!sentenceRow?.source_text?.trim()) {
+  if (!sourceText) {
+    const sentenceRow = await db
+      .selectFrom("sentence_translations")
+      .select("source_text")
+      .where("id", "=", input.sentenceId)
+      .executeTakeFirst();
+    sourceText = sentenceRow?.source_text?.trim();
+  }
+
+  if (!sourceText) {
     return null;
   }
 
-  const ttsAudio = await generateSpeechFromOpenAI(sentenceRow.source_text);
+  const ttsAudio = input.preGeneratedAudio
+    ? await input.preGeneratedAudio
+    : await generateSpeechFromOpenAI(sourceText);
 
   if (!ttsAudio) {
     return null;
