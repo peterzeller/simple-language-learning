@@ -183,7 +183,7 @@ async function generateFromOpenAI(input: {
     "If the user only gives a topic, create either a story or a dialogue around that topic with invented names when relevant.",
     "Prefer rich narratives with momentum and scene changes instead of shallow summaries.",
     "Include at least one surprising detail, twist, or little-known fact to keep the story interesting.",
-    "Target 500-2000 words unless the user explicitly asks for a different length.",
+    "Target 300-800 words unless the user explicitly asks for a different length.",
     "Keep language learner-friendly: mostly high-frequency vocabulary with occasional useful stretch words.",
     "If the requested language is Korean, write Korean using Latin characters (Revised Romanization style) and do not use Hangul.",
     `Output valid JSON only with a single key named \"sourceText\" that contains the ${learningLanguageLabel} response.`,
