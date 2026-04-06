@@ -36,6 +36,7 @@ export default async function SettingsPage({ searchParams }: SettingsPageProps) 
               <option value="en">{t("common.english")}</option>
               <option value="es">{t("common.spanish")}</option>
               <option value="de">{t("common.german")}</option>
+              <option value="ko">{t("common.korean")}</option>
             </select>
           </label>
           <label className={styles.field}>

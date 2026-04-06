@@ -126,6 +126,28 @@ function buildStoredSentence(segments: Array<string | { original: string; transl
   });
 }
 
+async function getSavedSentenceById(input: {
+  sentenceId: number;
+  learningLanguage: string;
+}): Promise<{ id: number; rawSentence: string } | null> {
+  await ensureLearningTables();
+  const db = getDb();
+
+  const row = await db
+    .selectFrom("sentence_translations")
+    .select(["id", "raw_sentence"])
+    .where("id", "=", input.sentenceId)
+    .where("learning_language", "=", input.learningLanguage)
+    .where("source_text", "is not", null)
+    .executeTakeFirst();
+
+  if (!row) {
+    return null;
+  }
+
+  return { id: row.id, rawSentence: row.raw_sentence };
+}
+
 async function requestOpenAiJson<T>(input: {
   client: OpenAI;
   systemPrompt: string;
@@ -133,6 +155,7 @@ async function requestOpenAiJson<T>(input: {
   schemaName: string;
   schema: Record<string, unknown>;
   useWebSearch: boolean;
+  verbosity?: "low" | "medium" | "high";
 }): Promise<T | null> {
   const response = await input.client.responses.create({
     model: "gpt-5.4-mini",
@@ -142,6 +165,7 @@ async function requestOpenAiJson<T>(input: {
     ],
     ...(input.useWebSearch ? { tools: [{ type: "web_search_preview" }] } : {}),
     text: {
+      ...(input.verbosity ? { verbosity: input.verbosity } : {}),
       format: {
         type: "json_schema",
         name: input.schemaName,
@@ -264,8 +288,14 @@ async function generateFromOpenAI(input: {
     "You must understand prompts and instructions even when users write in a different language.",
     "If the user asks a question, answer helpfully.",
     `If the user gives instructions, follow them while keeping the response in ${learningLanguageLabel}.`,
-    "If the user only gives a topic, create either a short story or a short dialogue around that topic with invented names when relevant.",
-    "Keep the response concise (2-5 sentences), clear, and learner-friendly.",
+    "Do not ask the user follow-up questions, clarifying questions, or any interactive prompts.",
+    "Treat this as a non-interactive, single-turn session and provide a complete response in one go.",
+    "If the user only gives a topic, create either a story or a dialogue around that topic with invented names when relevant.",
+    "Prefer rich narratives with momentum and scene changes instead of shallow summaries.",
+    "Include at least one surprising detail, twist, or little-known fact to keep the story interesting.",
+    "Target 300-800 words unless the user explicitly asks for a different length.",
+    "Keep language learner-friendly: mostly high-frequency vocabulary with occasional useful stretch words.",
+    "If the requested language is Korean, write Korean using Latin characters (Revised Romanization style) and do not use Hangul.",
     `Output valid JSON only with a single key named \"sourceText\" that contains the ${learningLanguageLabel} response.`,
   ].join(" ");
 
@@ -284,6 +314,7 @@ async function generateFromOpenAI(input: {
         additionalProperties: false,
       },
       useWebSearch: true,
+      verbosity: "high",
     });
 
     const sourceText = firstResponse?.sourceText?.trim();
@@ -401,6 +432,12 @@ function toAudioDataUrl(value: Buffer | Uint8Array | string): string {
 function fallbackSourceSentence(topic: string, learningLanguage: string): string {
   const normalized = topic.trim().toLowerCase();
 
+  if (learningLanguage === "ko") {
+    if (normalized === "travel") return "Naneun gicha yeohaengeul joahae.";
+    if (normalized === "food") return "Urineun maeil bam supeureul meogeoyo.";
+    return "Neo ju-mareul jal bonaenna?";
+  }
+
   if (learningLanguage === "de") {
     if (normalized === "travel") return "Ich reise gern mit dem Zug.";
     if (normalized === "food") return "Wir essen jeden Abend Suppe.";
@@ -418,8 +455,20 @@ function fallbackSourceSentence(topic: string, learningLanguage: string): string
   return "¿Cómo estuvo tu fin de semana?";
 }
 
-function fallbackSentence(topic: string): string {
+function fallbackSentence(topic: string, learningLanguage: string): string {
   const normalized = topic.trim().toLowerCase();
+
+  if (learningLanguage === "ko") {
+    if (normalized === "travel") {
+      return "(Naneun|I) (gicha|train) (yeohaengeul|travel) (joahae|like).";
+    }
+
+    if (normalized === "food") {
+      return "(Urineun|We) (maeil|every day) (bam|night) (supeureul|soup) (meogeoyo|eat).";
+    }
+
+    return "(Neo|You) (ju-mareul|weekend) (jal|well) (bonaenna|spent)?";
+  }
 
   if (normalized === "travel") {
     return buildStoredSentence([
@@ -660,7 +709,7 @@ export async function createSentenceExerciseFromPrompt(input: {
   knownLanguage: string;
 }): Promise<SentenceExercise> {
   const aiSentence = await generateFromOpenAI(input);
-  const rawSentence = aiSentence?.rawSentence ?? fallbackSentence(input.topic);
+  const rawSentence = aiSentence?.rawSentence ?? fallbackSentence(input.topic, input.learningLanguage);
   const sourceText = aiSentence?.sourceText ?? fallbackSourceSentence(input.topic, input.learningLanguage);
   const sentenceId = await saveGeneratedSentence({
     topic: input.topic,
@@ -722,6 +771,35 @@ export async function createSentenceExerciseFromRandomSentence(input: {
   const exercise = await createSentenceExerciseFromRawSentence({
     sentenceId: savedSentence.id,
     sentence: rawSentence,
+    userId: input.userId,
+    learningLanguage: input.learningLanguage,
+    knownLanguage: input.knownLanguage,
+  });
+
+  await warmSentenceAudioCache(savedSentence.id);
+
+  return exercise;
+}
+
+export async function createSentenceExerciseFromSentenceId(input: {
+  sentenceId: number;
+  topic: string;
+  userId: number;
+  learningLanguage: string;
+  knownLanguage: string;
+}): Promise<SentenceExercise> {
+  const savedSentence = await getSavedSentenceById({
+    sentenceId: input.sentenceId,
+    learningLanguage: input.learningLanguage,
+  });
+
+  if (!savedSentence) {
+    return createSentenceExerciseFromRandomSentence(input);
+  }
+
+  const exercise = await createSentenceExerciseFromRawSentence({
+    sentenceId: savedSentence.id,
+    sentence: savedSentence.rawSentence,
     userId: input.userId,
     learningLanguage: input.learningLanguage,
     knownLanguage: input.knownLanguage,

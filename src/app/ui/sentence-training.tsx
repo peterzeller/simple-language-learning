@@ -189,13 +189,19 @@ export function SentenceTraining({ exercise }: SentenceTrainingProps) {
       return;
     }
 
+    setAudioError(null);
+
+    if (isPlaying) {
+      audioRef.current.pause();
+      return;
+    }
+
     const duration = audioRef.current.duration;
 
     if (!Number.isFinite(duration) || duration <= 0) {
       return;
     }
 
-    const wasPlaying = isPlaying;
     const bounds = trackRef.current.getBoundingClientRect();
 
     if (!Number.isFinite(bounds.height) || bounds.height <= 0) {
@@ -213,18 +219,16 @@ export function SentenceTraining({ exercise }: SentenceTrainingProps) {
     audioRef.current.currentTime = nextTime;
     setPlaybackProgress(ratio);
 
-    if (!wasPlaying) {
-      if (restartTimeoutRef.current) {
-        clearTimeout(restartTimeoutRef.current);
-        restartTimeoutRef.current = null;
-      }
+    if (restartTimeoutRef.current) {
+      clearTimeout(restartTimeoutRef.current);
+      restartTimeoutRef.current = null;
+    }
 
-      try {
-        await audioRef.current.play();
-      } catch (error) {
-        logPlaybackError("Playback from seek failed", error);
-        setAudioError(t("sentence.audioBlocked"));
-      }
+    try {
+      await audioRef.current.play();
+    } catch (error) {
+      logPlaybackError("Playback from seek failed", error);
+      setAudioError(t("sentence.audioBlocked"));
     }
   };
 
