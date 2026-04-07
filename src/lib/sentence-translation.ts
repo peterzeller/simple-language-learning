@@ -258,7 +258,11 @@ async function generateFromOpenAI(input: {
   }
 }
 
-const inFlightSpeechGenerationByText = new Map<string, Promise<Buffer | null>>();
+const inFlightSpeechGenerationByText = new Map<string, {
+  expiresAt: number;
+  promise: Promise<Buffer | null>;
+}>();
+const TTS_IN_FLIGHT_TTL_MS = 5 * 60 * 1000;
 
 async function requestSpeechFromOpenAI(text: string): Promise<Buffer | null> {
   const client = getOpenAiClient();
@@ -295,16 +299,35 @@ function generateSpeechFromOpenAI(text: string): Promise<Buffer | null> {
     return Promise.resolve(null);
   }
 
+  const now = Date.now();
   const inFlightGeneration = inFlightSpeechGenerationByText.get(normalizedText);
 
+  if (inFlightGeneration && inFlightGeneration.expiresAt > now) {
+    return inFlightGeneration.promise;
+  }
+
   if (inFlightGeneration) {
-    return inFlightGeneration;
+    inFlightSpeechGenerationByText.delete(normalizedText);
   }
 
   const generationPromise = requestSpeechFromOpenAI(normalizedText);
-  inFlightSpeechGenerationByText.set(normalizedText, generationPromise);
+  const expiresAt = now + TTS_IN_FLIGHT_TTL_MS;
+  inFlightSpeechGenerationByText.set(normalizedText, {
+    expiresAt,
+    promise: generationPromise,
+  });
+  const evictionTimer = setTimeout(() => {
+    const activeGeneration = inFlightSpeechGenerationByText.get(normalizedText);
+    if (activeGeneration?.promise === generationPromise) {
+      inFlightSpeechGenerationByText.delete(normalizedText);
+    }
+  }, TTS_IN_FLIGHT_TTL_MS);
+
+  evictionTimer.unref();
   generationPromise.finally(() => {
-    if (inFlightSpeechGenerationByText.get(normalizedText) === generationPromise) {
+    clearTimeout(evictionTimer);
+    const activeGeneration = inFlightSpeechGenerationByText.get(normalizedText);
+    if (activeGeneration?.promise === generationPromise) {
       inFlightSpeechGenerationByText.delete(normalizedText);
     }
   }).catch(() => undefined);
