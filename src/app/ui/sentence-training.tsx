@@ -181,8 +181,9 @@ export function SentenceTraining({ exercise }: SentenceTrainingProps) {
 
   const activeQuestion =
     activeQuestionIndex !== null ? questionByIndex.get(activeQuestionIndex) : undefined;
-  const activeToken =
+  const activeTokenCandidate =
     activeQuestionIndex !== null ? exercise.tokens[activeQuestionIndex] : undefined;
+  const activeToken = activeTokenCandidate?.kind === "word" ? activeTokenCandidate : undefined;
 
   const seekFromTrackClick = async (event: React.MouseEvent<HTMLButtonElement>) => {
     if (!audioRef.current || !trackRef.current) {
@@ -288,6 +289,14 @@ export function SentenceTraining({ exercise }: SentenceTrainingProps) {
 
         <div className={styles.sentenceLine}>
           {exercise.tokens.map((token, index) => {
+            if (token.kind === "text") {
+              return (
+                <span key={`text-${index}`} style={{ whiteSpace: "pre-wrap" }}>
+                  {token.text}
+                </span>
+              );
+            }
+
             const question = questionByIndex.get(index);
             const answer = answers[index];
             const shouldReveal = !token.isQuestion && (token.revealByDefault || revealedWords[index]);
