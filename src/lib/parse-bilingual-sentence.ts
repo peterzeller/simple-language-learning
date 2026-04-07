@@ -11,27 +11,27 @@ export interface AlignedBilingualWord {
 export type AlignedBilingualSegment = AlignedBilingualWord | string;
 
 // Parses a sentence expected to have repeated "(source|target)" segments.
-export function parseBilingualSentence(sentence: string): BilingualSentencePair[] {
+export function parseBilingualSentence(sentence: string): AlignedBilingualSegment[] {
   let inParentheses = false;
   let afterBar = false;
   let currentBeforeParentheses = "";
   let currentSource = "";
   let currentTarget = "";
-  const result: BilingualSentencePair[] = [];
+  const result: AlignedBilingualSegment[] = [];
 
   for (const char of sentence) {
-    if (char === "(") {
+    if (char === "⦅") {
+      if (currentBeforeParentheses) {
+        result.push(currentBeforeParentheses);
+        currentBeforeParentheses = "";
+      }
       inParentheses = true;
       afterBar = false;
       currentSource = "";
       currentTarget = "";
-    } else if (char === ")") {
+    } else if (char === "⦆") {
       if (inParentheses) {
-        if (currentTarget) {
-          result.push({ source: currentBeforeParentheses + currentSource, target: currentTarget.trim() });
-        } else {
-          result.push({ source: currentBeforeParentheses, target: currentSource.trim() });
-        }
+        result.push({ original: currentSource, translation: currentTarget.trim() });
         inParentheses = false;
         afterBar = false;
         currentBeforeParentheses = "";
@@ -41,7 +41,7 @@ export function parseBilingualSentence(sentence: string): BilingualSentencePair[
         currentBeforeParentheses += char;
       }
     } else if (inParentheses) {
-      if (char === "|") {
+      if (char === "‖") {
         afterBar = true;
         continue;
       }
@@ -51,7 +51,7 @@ export function parseBilingualSentence(sentence: string): BilingualSentencePair[
         currentSource += char;
       }
     } else {
-      if (char == '|') {
+      if (char == '‖') {
         continue;
       }
       currentBeforeParentheses += char;
@@ -59,7 +59,7 @@ export function parseBilingualSentence(sentence: string): BilingualSentencePair[
   }
 
   if (currentBeforeParentheses) {
-    result.push({ source: currentBeforeParentheses, target: "" });
+    result.push(currentBeforeParentheses);
   }
 
   return result;
@@ -67,47 +67,4 @@ export function parseBilingualSentence(sentence: string): BilingualSentencePair[
 
 function normalizeLettersOnly(value: string): string {
   return value.normalize("NFC").replace(/[^\p{L}]+/gu, "");
-}
-
-export function alignBilingualPairsWithOriginalText(
-  originalText: string,
-  pairs: BilingualSentencePair[],
-): AlignedBilingualSegment[] {
-  const segments: AlignedBilingualSegment[] = [];
-  const wordRegex = /\p{L}+/gu;
-  let pairIndex = 0;
-  let lastIndex = 0;
-
-  for (const match of originalText.matchAll(wordRegex)) {
-    const fullWord = match[0];
-    const index = match.index ?? 0;
-
-    if (index > lastIndex) {
-      segments.push(originalText.slice(lastIndex, index));
-    }
-
-    const pair = pairs[pairIndex];
-    const normalizedWord = normalizeLettersOnly(fullWord);
-    const normalizedPairSource = normalizeLettersOnly(pair?.source ?? "");
-    const translation = pair?.target?.trim() ?? "";
-
-    segments.push({
-      original: normalizedWord,
-      translation,
-    });
-
-    if (normalizedPairSource && normalizedPairSource === normalizedWord) {
-      pairIndex += 1;
-    } else if (pair) {
-      pairIndex += 1;
-    }
-
-    lastIndex = index + fullWord.length;
-  }
-
-  if (lastIndex < originalText.length) {
-    segments.push(originalText.slice(lastIndex));
-  }
-
-  return segments;
 }

@@ -11,7 +11,6 @@ import {
   storeTranslationPairs,
 } from "@/lib/learning";
 import {
-  alignBilingualPairsWithOriginalText,
   parseBilingualSentence,
   type AlignedBilingualSegment,
 } from "@/lib/parse-bilingual-sentence";
@@ -45,7 +44,7 @@ export interface SentenceExercise {
   questions: SentenceQuestion[];
 }
 
-const TRANSLATION_MODULE_VERSION = 2;
+const TRANSLATION_MODULE_VERSION = 6;
 
 interface SavedSentenceRow {
   id: number;
@@ -169,9 +168,10 @@ async function requestOpenAiJson<T>(input: {
   schema: Record<string, unknown>;
   useWebSearch: boolean;
   verbosity?: "low" | "medium" | "high";
+  model?: string;
 }): Promise<T | null> {
   const response = await input.client.responses.create({
-    model: "gpt-5.4-mini",
+    model: input.model ?? "gpt-5.4-mini",
     input: [
       { role: "system", content: input.systemPrompt },
       { role: "user", content: input.userPrompt },
@@ -214,9 +214,11 @@ async function translateSourceTextToBilingual(input: {
 
   const translationSystemPrompt = [
     `Convert ${learningLanguageLabel} text into bilingual token format.`,
-    `Each token must be in this format: (${learningLanguageLabel}|${knownLanguageLabel}).`,
+    `Each single word must be in this format: ⦅${learningLanguageLabel}‖${knownLanguageLabel}⦆.`,
     `Use honest, literal ${knownLanguageLabel} translations; do not smooth grammar for naturalness.`,
-    "Do not merge tokens. Keep token order and punctuation aligned to the source text.",
+    "Do not merge words, translate each word individually. Keep punctuation and spacing outside the translated words.",
+    "Example input: ¡Hola! ¿Cómo estás? Compré algunas frutas: plátanos, manzanas y naranjas.",
+    "Example output: ¡⦅Hola‖Hello⦆! ¿⦅Cómo‖How⦆ ⦅estás‖are you⦆? ⦅Compré‖I bought⦆ ⦅algunas‖some⦆ ⦅frutas‖fruits⦆: ⦅plátanos‖bananas⦆, ⦅manzanas‖apples⦆ y ⦅naranjas‖oranges⦆.",
     "Output valid JSON only with a single key named \"sentence\".",
   ].join(" ");
 
@@ -242,13 +244,11 @@ async function translateSourceTextToBilingual(input: {
     return null;
   }
 
-  const pairs = parseBilingualSentence(sentence);
+  const translationSegments = parseBilingualSentence(sentence);
 
-  if (pairs.length === 0) {
+  if (translationSegments.length === 0) {
     return null;
   }
-
-  const translationSegments = alignBilingualPairsWithOriginalText(input.sourceText, pairs);
 
   return {
     rawSentence: sentence,
@@ -530,9 +530,8 @@ function fallbackSentence(topic: string, learningLanguage: string): string {
 }
 
 function buildFallbackSegments(topic: string, learningLanguage: string): AlignedBilingualSegment[] {
-  const sourceText = fallbackSourceSentence(topic, learningLanguage);
   const sentence = fallbackSentence(topic, learningLanguage);
-  return alignBilingualPairsWithOriginalText(sourceText, parseBilingualSentence(sentence));
+  return parseBilingualSentence(sentence);
 }
 
 function parseStoredSegments(serialized: string): StoredTranslationPayload | null {
