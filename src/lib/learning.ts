@@ -96,6 +96,51 @@ export async function storeTranslationPairs(
   return sourceWordToId;
 }
 
+export async function getTopTranslationsForSourceWords(input: {
+  sourceWords: string[];
+  sourceLanguage: string;
+  targetLanguage: string;
+}): Promise<Map<string, string>> {
+  await ensureLearningTables();
+  const db = getDb();
+
+  const normalizedWords = Array.from(
+    new Set(
+      input.sourceWords
+        .map((word) => normalizeWord(word))
+        .filter((word) => word.length > 0),
+    ),
+  );
+
+  if (normalizedWords.length === 0) {
+    return new Map<string, string>();
+  }
+
+  const rows = await db
+    .selectFrom("word_links")
+    .innerJoin("words as source_words", "source_words.id", "word_links.from_id")
+    .innerJoin("words as target_words", "target_words.id", "word_links.to_id")
+    .select([
+      "source_words.word as sourceWord",
+      "target_words.word as targetWord",
+      "word_links.count as translationCount",
+    ])
+    .where("source_words.language", "=", input.sourceLanguage)
+    .where("target_words.language", "=", input.targetLanguage)
+    .where("source_words.word", "in", normalizedWords)
+    .orderBy("word_links.count", "desc")
+    .execute();
+
+  const translationBySource = new Map<string, string>();
+  for (const row of rows) {
+    if (!translationBySource.has(row.sourceWord)) {
+      translationBySource.set(row.sourceWord, row.targetWord);
+    }
+  }
+
+  return translationBySource;
+}
+
 export async function getKnownWordIdsForUser(userId: number): Promise<Set<number>> {
   const knownWordIds = new Set<number>();
   const wordKnowledge = await getUserWordKnowledgeTable(userId);

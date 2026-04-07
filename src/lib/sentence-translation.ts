@@ -6,6 +6,7 @@ import { sql } from "kysely";
 import { ensureLearningTables, getDb } from "@/lib/db";
 import { LANGUAGE_LABELS, type SupportedLearningLanguage, isSupportedLearningLanguage } from "@/lib/language-settings";
 import {
+  getTopTranslationsForSourceWords,
   getUserWordKnowledgeTable,
   normalizeWord,
   storeTranslationPairs,
@@ -45,6 +46,14 @@ export interface SentenceExercise {
   questions: SentenceQuestion[];
 }
 
+export interface SentenceStreamingPayload {
+  type: "source_delta" | "draft_exercise" | "final_exercise" | "error";
+  delta?: string;
+  sourceText?: string;
+  exercise?: SentenceExercise;
+  message?: string;
+}
+
 const TRANSLATION_MODULE_VERSION = 2;
 
 interface SavedSentenceRow {
@@ -77,7 +86,7 @@ function asSupportedLanguage(language: string): SupportedLearningLanguage {
   return "es";
 }
 
-async function saveGeneratedSentence(input: {
+export async function saveGeneratedSentence(input: {
   topic: string;
   learningLanguage: string;
   rawSentence: string;
@@ -340,6 +349,107 @@ async function generateFromOpenAI(input: {
     console.error("Error generating sentence from OpenAI:", e);
     return null;
   }
+}
+
+export async function generateSourceTextFromPromptStream(input: {
+  topic: string;
+  learningLanguage: string;
+  onDelta: (delta: string) => void;
+}): Promise<{ sourceText: string; sourceTextAudioPromise: Promise<Buffer | null> } | null> {
+  const client = getOpenAiClient();
+  if (!client) {
+    return null;
+  }
+
+  const learningLanguage = asSupportedLanguage(input.learningLanguage);
+  const learningLanguageLabel = LANGUAGE_LABELS[learningLanguage];
+  const generationSystemPrompt = [
+    `Respond to the user's prompt in ${learningLanguageLabel}.`,
+    "You must understand prompts and instructions even when users write in a different language.",
+    "If the user asks a question, answer helpfully.",
+    `If the user gives instructions, follow them while keeping the response in ${learningLanguageLabel}.`,
+    "Do not ask the user follow-up questions, clarifying questions, or any interactive prompts.",
+    "Treat this as a non-interactive, single-turn session and provide a complete response in one go.",
+    "If the user only gives a topic, create either a story or a dialogue around that topic with invented names when relevant.",
+    "Prefer rich narratives with momentum and scene changes instead of shallow summaries.",
+    "Include at least one surprising detail, twist, or little-known fact to keep the story interesting.",
+    "Target 300-800 words unless the user explicitly asks for a different length.",
+    "Keep language learner-friendly: mostly high-frequency vocabulary with occasional useful stretch words.",
+    "If the requested language is Korean, write Korean using Latin characters (Revised Romanization style) and do not use Hangul.",
+  ].join(" ");
+
+  let sourceText = "";
+  try {
+    const stream = client.responses.stream({
+      model: "gpt-5.4-mini",
+      input: [
+        { role: "system", content: generationSystemPrompt },
+        { role: "user", content: input.topic },
+      ],
+      tools: [{ type: "web_search_preview" }],
+    });
+
+    stream.on("response.output_text.delta", (event) => {
+      sourceText += event.delta;
+      input.onDelta(event.delta);
+    });
+    await stream.done();
+  } catch (error) {
+    console.error("Error streaming source text from OpenAI:", error);
+    return null;
+  }
+
+  const trimmed = sourceText.trim();
+  if (!trimmed) {
+    return null;
+  }
+
+  return {
+    sourceText: trimmed,
+    sourceTextAudioPromise: generateSpeechFromOpenAI(trimmed),
+  };
+}
+
+function splitSourceTextIntoSegments(sourceText: string): Array<string | { original: string; translation: string }> {
+  const pieces = sourceText.match(/(\p{L}[\p{L}\p{M}'’-]*|\s+|[^\p{L}\s]+)/gu) ?? [sourceText];
+  return pieces.map((piece) => {
+    if (!/\p{L}/u.test(piece)) {
+      return piece;
+    }
+
+    return { original: piece, translation: piece };
+  });
+}
+
+export async function buildDraftSegmentsFromDb(input: {
+  sourceText: string;
+  learningLanguage: string;
+  knownLanguage: string;
+}): Promise<AlignedBilingualSegment[]> {
+  const rawSegments = splitSourceTextIntoSegments(input.sourceText);
+  const words = rawSegments
+    .filter((segment): segment is { original: string; translation: string } => typeof segment !== "string")
+    .map((segment) => segment.original);
+
+  const translationBySourceWord = await getTopTranslationsForSourceWords({
+    sourceWords: words,
+    sourceLanguage: input.learningLanguage,
+    targetLanguage: input.knownLanguage,
+  });
+
+  return rawSegments.map((segment) => {
+    if (typeof segment === "string") {
+      return segment;
+    }
+
+    const normalized = normalizeWord(segment.original);
+    const dbTranslation = translationBySourceWord.get(normalized);
+
+    return {
+      original: segment.original,
+      translation: dbTranslation ?? segment.original,
+    };
+  });
 }
 
 const inFlightSpeechGenerationByText = new Map<string, {
@@ -605,7 +715,7 @@ function getQuestionIndexesByKnowledgeScore(input: {
   return Array.from(chosenIndexes);
 }
 
-async function createSentenceExerciseFromRawSentence(input: {
+export async function createSentenceExerciseFromRawSentence(input: {
   sentenceId: number;
   segments: AlignedBilingualSegment[];
   userId: number;
