@@ -318,10 +318,16 @@
   border: 1px solid var(--surface-elevated);
   border-radius: 10px;
   background: var(--surface-elevated);
-  padding: 8px 0px;
-  display: grid;
+  padding: 8px 10px;
+  min-height: 46px;
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
   text-align: center;
   font-size: 1.2rem;
+  line-height: 1.15;
   cursor: pointer;
 }
 
@@ -354,7 +360,10 @@
 }
 
 .wordTranslation {
+  display: block;
+  min-height: 0.7rem;
   font-size: 0.6rem;
+  line-height: 1;
   color: var(--text-muted);
 }
 
