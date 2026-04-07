@@ -42,6 +42,8 @@ interface SentenceTranslationsTable {
   topic: string;
   learning_language: string;
   raw_sentence: string;
+  translation_segments: string;
+  translation_version: number;
   source_text: string | null;
   created_at: Generated<TimestampColumn>;
 }
@@ -198,6 +200,8 @@ export async function ensureLearningTables(): Promise<void> {
       .addColumn("topic", "text", (column) => column.notNull())
       .addColumn("learning_language", "varchar(12)", (column) => column.notNull().defaultTo("es"))
       .addColumn("raw_sentence", "text", (column) => column.notNull())
+      .addColumn("translation_segments", "text", (column) => column.notNull().defaultTo("[]"))
+      .addColumn("translation_version", "integer", (column) => column.notNull().defaultTo(1))
       .addColumn("source_text", "text")
       .addColumn("created_at", "timestamptz", (column) =>
         column.notNull().defaultTo(sql`CURRENT_TIMESTAMP`),
@@ -207,6 +211,16 @@ export async function ensureLearningTables(): Promise<void> {
     await sql`
       ALTER TABLE sentence_translations
       ADD COLUMN IF NOT EXISTS learning_language varchar(12) NOT NULL DEFAULT 'es'
+    `.execute(db);
+
+    await sql`
+      ALTER TABLE sentence_translations
+      ADD COLUMN IF NOT EXISTS translation_segments text NOT NULL DEFAULT '[]'
+    `.execute(db);
+
+    await sql`
+      ALTER TABLE sentence_translations
+      ADD COLUMN IF NOT EXISTS translation_version integer NOT NULL DEFAULT 1
     `.execute(db);
 
     await sql`
@@ -234,6 +248,12 @@ export async function ensureLearningTables(): Promise<void> {
     await sql`
       ALTER TABLE sentence_translations
       DROP COLUMN IF EXISTS spanish_text
+    `.execute(db);
+
+    await sql`
+      DELETE FROM sentence_translations
+      WHERE translation_segments = '[]'
+         OR translation_version IS NULL
     `.execute(db);
 
     await db.schema

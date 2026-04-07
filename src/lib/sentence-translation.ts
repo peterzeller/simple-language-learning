@@ -10,9 +10,14 @@ import {
   normalizeWord,
   storeTranslationPairs,
 } from "@/lib/learning";
-import { parseBilingualSentence } from "@/lib/parse-bilingual-sentence";
+import {
+  alignBilingualPairsWithOriginalText,
+  parseBilingualSentence,
+  type AlignedBilingualSegment,
+} from "@/lib/parse-bilingual-sentence";
 
-export interface SentenceToken {
+export interface SentenceWordToken {
+  kind: "word";
   source: string;
   target: string;
   wordId: number;
@@ -20,6 +25,13 @@ export interface SentenceToken {
   revealByDefault: boolean;
   isQuestion: boolean;
 }
+
+export interface SentenceTextToken {
+  kind: "text";
+  text: string;
+}
+
+export type SentenceToken = SentenceWordToken | SentenceTextToken;
 
 export interface SentenceQuestion {
   tokenIndex: number;
@@ -31,6 +43,20 @@ export interface SentenceExercise {
   sentenceId: number;
   tokens: SentenceToken[];
   questions: SentenceQuestion[];
+}
+
+const TRANSLATION_MODULE_VERSION = 2;
+
+interface SavedSentenceRow {
+  id: number;
+  learningLanguage: string;
+  rawSentence: string;
+  sourceText: string;
+  translationSegments: string;
+}
+interface StoredTranslationPayload {
+  version: number;
+  segments: AlignedBilingualSegment[];
 }
 
 function getOpenAiClient(): OpenAI | null {
@@ -56,6 +82,8 @@ async function saveGeneratedSentence(input: {
   learningLanguage: string;
   rawSentence: string;
   sourceText: string;
+  translationSegments: AlignedBilingualSegment[];
+  translationVersion: number;
 }): Promise<number> {
   await ensureLearningTables();
   const db = getDb();
@@ -66,6 +94,11 @@ async function saveGeneratedSentence(input: {
       topic: input.topic,
       learning_language: input.learningLanguage,
       raw_sentence: input.rawSentence,
+      translation_segments: JSON.stringify({
+        version: input.translationVersion,
+        segments: input.translationSegments,
+      }),
+      translation_version: input.translationVersion,
       source_text: input.sourceText,
     })
     .returning("id")
@@ -74,13 +107,13 @@ async function saveGeneratedSentence(input: {
   return row.id;
 }
 
-async function getRandomSavedSentence(learningLanguage: string): Promise<{ id: number; rawSentence: string } | null> {
+async function getRandomSavedSentence(learningLanguage: string): Promise<SavedSentenceRow | null> {
   await ensureLearningTables();
   const db = getDb();
 
   const row = await db
     .selectFrom("sentence_translations")
-    .select(["id", "raw_sentence"])
+    .select(["id", "learning_language", "raw_sentence", "source_text", "translation_segments"])
     .where("learning_language", "=", learningLanguage)
     .where("source_text", "is not", null)
     .orderBy(sql`RANDOM()`)
@@ -91,19 +124,25 @@ async function getRandomSavedSentence(learningLanguage: string): Promise<{ id: n
     return null;
   }
 
-  return { id: row.id, rawSentence: row.raw_sentence };
+  return {
+    id: row.id,
+    learningLanguage: row.learning_language,
+    rawSentence: row.raw_sentence,
+    sourceText: row.source_text ?? "",
+    translationSegments: row.translation_segments,
+  };
 }
 
 async function getSavedSentenceById(input: {
   sentenceId: number;
   learningLanguage: string;
-}): Promise<{ id: number; rawSentence: string } | null> {
+}): Promise<SavedSentenceRow | null> {
   await ensureLearningTables();
   const db = getDb();
 
   const row = await db
     .selectFrom("sentence_translations")
-    .select(["id", "raw_sentence"])
+    .select(["id", "learning_language", "raw_sentence", "source_text", "translation_segments"])
     .where("id", "=", input.sentenceId)
     .where("learning_language", "=", input.learningLanguage)
     .where("source_text", "is not", null)
@@ -113,7 +152,13 @@ async function getSavedSentenceById(input: {
     return null;
   }
 
-  return { id: row.id, rawSentence: row.raw_sentence };
+  return {
+    id: row.id,
+    learningLanguage: row.learning_language,
+    rawSentence: row.raw_sentence,
+    sourceText: row.source_text ?? "",
+    translationSegments: row.translation_segments,
+  };
 }
 
 async function requestOpenAiJson<T>(input: {
@@ -156,11 +201,71 @@ async function requestOpenAiJson<T>(input: {
   }
 }
 
+async function translateSourceTextToBilingual(input: {
+  client: OpenAI;
+  sourceText: string;
+  learningLanguage: string;
+  knownLanguage: string;
+}): Promise<{ rawSentence: string; translationSegments: AlignedBilingualSegment[] } | null> {
+  const learningLanguage = asSupportedLanguage(input.learningLanguage);
+  const knownLanguage = asSupportedLanguage(input.knownLanguage);
+  const learningLanguageLabel = LANGUAGE_LABELS[learningLanguage];
+  const knownLanguageLabel = LANGUAGE_LABELS[knownLanguage];
+
+  const translationSystemPrompt = [
+    `Convert ${learningLanguageLabel} text into bilingual token format.`,
+    `Each token must be in this format: (${learningLanguageLabel}|${knownLanguageLabel}).`,
+    `Use honest, literal ${knownLanguageLabel} translations; do not smooth grammar for naturalness.`,
+    "Do not merge tokens. Keep token order and punctuation aligned to the source text.",
+    "Output valid JSON only with a single key named \"sentence\".",
+  ].join(" ");
+
+  const secondResponse = await requestOpenAiJson<{ sentence: string }>({
+    client: input.client,
+    systemPrompt: translationSystemPrompt,
+    userPrompt: input.sourceText,
+    schemaName: "bilingual_sentence_response",
+    schema: {
+      type: "object",
+      properties: {
+        sentence: { type: "string" },
+      },
+      required: ["sentence"],
+      additionalProperties: false,
+    },
+    useWebSearch: false,
+  });
+
+  const sentence = secondResponse?.sentence?.trim();
+
+  if (!sentence) {
+    return null;
+  }
+
+  const pairs = parseBilingualSentence(sentence);
+
+  if (pairs.length === 0) {
+    return null;
+  }
+
+  const translationSegments = alignBilingualPairsWithOriginalText(input.sourceText, pairs);
+
+  return {
+    rawSentence: sentence,
+    translationSegments,
+  };
+}
+
 async function generateFromOpenAI(input: {
   topic: string;
   learningLanguage: string;
   knownLanguage: string;
-}): Promise<{ rawSentence: string; sourceText: string; sourceTextAudioPromise: Promise<Buffer | null> } | null> {
+}): Promise<{
+  rawSentence: string;
+  sourceText: string;
+  sourceTextAudioPromise: Promise<Buffer | null>;
+  translationSegments: AlignedBilingualSegment[];
+} | null> {
   const client = getOpenAiClient();
 
   if (!client) {
@@ -169,9 +274,7 @@ async function generateFromOpenAI(input: {
   }
 
   const learningLanguage = asSupportedLanguage(input.learningLanguage);
-  const knownLanguage = asSupportedLanguage(input.knownLanguage);
   const learningLanguageLabel = LANGUAGE_LABELS[learningLanguage];
-  const knownLanguageLabel = LANGUAGE_LABELS[knownLanguage];
 
   const generationSystemPrompt = [
     `Respond to the user's prompt in ${learningLanguageLabel}.`,
@@ -215,43 +318,24 @@ async function generateFromOpenAI(input: {
     }
     const sourceTextAudioPromise = generateSpeechFromOpenAI(sourceText);
 
-    const translationSystemPrompt = [
-      `Convert ${learningLanguageLabel} text into bilingual token format.`,
-      `Each token must be in this format: (${learningLanguageLabel}|${knownLanguageLabel}).`,
-      `Use honest, literal ${knownLanguageLabel} translations; do not smooth grammar for naturalness.`,
-      "Do not merge tokens. Keep token order and punctuation aligned to the source text.",
-      "Output valid JSON only with a single key named \"sentence\".",
-    ].join(" ");
-
-    const secondResponse = await requestOpenAiJson<{ sentence: string }>({
+    const translationResponse = await translateSourceTextToBilingual({
       client,
-      systemPrompt: translationSystemPrompt,
-      userPrompt: sourceText,
-      schemaName: "bilingual_sentence_response",
-      schema: {
-        type: "object",
-        properties: {
-          sentence: { type: "string" },
-        },
-        required: ["sentence"],
-        additionalProperties: false,
-      },
-      useWebSearch: false,
+      sourceText,
+      learningLanguage: input.learningLanguage,
+      knownLanguage: input.knownLanguage,
     });
 
-    const sentence = secondResponse?.sentence?.trim();
-
-    if (!sentence) {
+    if (!translationResponse) {
       console.warn("OpenAI translation step failed, falling back to default sentence.");
       return null;
     }
 
-    if (parseBilingualSentence(sentence).length === 0) {
-      console.warn("OpenAI returned an invalid bilingual format, falling back to default sentence.");
-      return null;
-    }
-
-    return { rawSentence: sentence, sourceText, sourceTextAudioPromise };
+    return {
+      rawSentence: translationResponse.rawSentence,
+      sourceText,
+      sourceTextAudioPromise,
+      translationSegments: translationResponse.translationSegments,
+    };
   } catch (e) {
     console.error("Error generating sentence from OpenAI:", e);
     return null;
@@ -445,6 +529,36 @@ function fallbackSentence(topic: string, learningLanguage: string): string {
   return "¿(Cómo|How) (estuvo|was) (tu|your) (fin|end) (de|of) (semana|week)?";
 }
 
+function buildFallbackSegments(topic: string, learningLanguage: string): AlignedBilingualSegment[] {
+  const sourceText = fallbackSourceSentence(topic, learningLanguage);
+  const sentence = fallbackSentence(topic, learningLanguage);
+  return alignBilingualPairsWithOriginalText(sourceText, parseBilingualSentence(sentence));
+}
+
+function parseStoredSegments(serialized: string): StoredTranslationPayload | null {
+  try {
+    const parsed = JSON.parse(serialized) as unknown;
+    if (typeof parsed !== "object" || parsed === null) {
+      return null;
+    }
+    const version = (parsed as { version?: unknown }).version;
+    const segments = (parsed as { segments?: unknown }).segments;
+    if (!Number.isInteger(version) || !Array.isArray(segments)) {
+      return null;
+    }
+
+    const filteredSegments = segments.filter((item) => typeof item === "string" || (
+      typeof item === "object"
+      && item !== null
+      && typeof (item as { original?: unknown }).original === "string"
+      && typeof (item as { translation?: unknown }).translation === "string"
+    )) as AlignedBilingualSegment[];
+    return { version: Number(version), segments: filteredSegments };
+  } catch {
+    return null;
+  }
+}
+
 function getQuestionIndexesByKnowledgeScore(input: {
   tokens: Array<{ wordId: number }>;
   scoreByWordId: Map<number, number>;
@@ -493,21 +607,22 @@ function getQuestionIndexesByKnowledgeScore(input: {
 
 async function createSentenceExerciseFromRawSentence(input: {
   sentenceId: number;
-  sentence: string;
+  segments: AlignedBilingualSegment[];
   userId: number;
   learningLanguage: string;
   knownLanguage: string;
 }): Promise<SentenceExercise> {
-  const pairs = parseBilingualSentence(input.sentence);
+  const pairs = input.segments.filter((segment): segment is { original: string; translation: string } =>
+    typeof segment !== "string");
 
   if (pairs.length === 0) {
-    throw new Error(`Could not generate a valid bilingual sentence from '${input.sentence}'`);
+    throw new Error("Could not generate a valid bilingual sentence.");
   }
 
   const wordIdMap = await storeTranslationPairs(
     pairs.map((pair) => ({
-      sourceWord: pair.source,
-      targetWord: pair.target,
+      sourceWord: pair.original,
+      targetWord: pair.translation,
       sourceLanguage: input.learningLanguage,
       targetLanguage: input.knownLanguage,
     })),
@@ -522,8 +637,12 @@ async function createSentenceExerciseFromRawSentence(input: {
   const scoreByWordId = new Map(
     wordKnowledgeTable.map((row) => [row.wordId, row.knowledgeScore]),
   );
-  const tokens: SentenceToken[] = pairs.map((pair) => {
-    const wordId = wordIdMap.get(normalizeWord(pair.source));
+  const tokens: SentenceToken[] = input.segments.map((segment) => {
+    if (typeof segment === "string") {
+      return { kind: "text", text: segment };
+    }
+
+    const wordId = wordIdMap.get(normalizeWord(segment.original));
 
     if (!wordId) {
       throw new Error("Missing word id for generated sentence token.");
@@ -532,8 +651,9 @@ async function createSentenceExerciseFromRawSentence(input: {
     const score = scoreByWordId.get(wordId);
 
     return {
-      source: pair.source,
-      target: pair.target,
+      kind: "word",
+      source: segment.original,
+      target: segment.translation,
       wordId,
       isKnown: knownWordIds.has(wordId),
       revealByDefault: score === undefined || score === 0,
@@ -541,17 +661,33 @@ async function createSentenceExerciseFromRawSentence(input: {
     };
   });
 
+  const wordTokenIndexes = tokens
+    .map((token, index) => (token.kind === "word" ? index : -1))
+    .filter((index) => index >= 0);
+  const wordTokens = wordTokenIndexes.map((index) => tokens[index]).filter((token): token is SentenceWordToken => token.kind === "word");
+
   const questionIndexes = getQuestionIndexesByKnowledgeScore({
-    tokens,
+    tokens: wordTokens,
     scoreByWordId,
   });
-  for (const index of questionIndexes) {
-    tokens[index].isQuestion = true;
+  for (const wordIndex of questionIndexes) {
+    const tokenIndex = wordTokenIndexes[wordIndex];
+    const token = tokens[tokenIndex];
+    if (token?.kind === "word") {
+      token.isQuestion = true;
+    }
   }
-  const optionPool = Array.from(new Set(tokens.map((token) => token.target)));
+  const optionPool = Array.from(new Set(wordTokens.map((token) => token.target)));
 
-  const questions = questionIndexes.map((tokenIndex) => {
-    const correctAnswer = tokens[tokenIndex].target;
+  const questions = questionIndexes.map((wordIndex) => {
+    const tokenIndex = wordTokenIndexes[wordIndex];
+    const token = tokens[tokenIndex];
+
+    if (!token || token.kind !== "word") {
+      throw new Error("Question generation failed due to invalid token type.");
+    }
+
+    const correctAnswer = token.target;
     const wrongAnswers = optionPool.filter((option) => option !== correctAnswer).slice(0, 3);
     const options = [correctAnswer, ...wrongAnswers];
 
@@ -586,6 +722,54 @@ async function warmSentenceAudioCache(input: {
   }
 }
 
+async function refreshSentenceSegmentsIfNeeded(input: {
+  sentence: SavedSentenceRow;
+  knownLanguage: string;
+}): Promise<AlignedBilingualSegment[] | null> {
+  const existingSegments = parseStoredSegments(input.sentence.translationSegments);
+  if (existingSegments?.version === TRANSLATION_MODULE_VERSION && existingSegments.segments.length) {
+    return existingSegments.segments;
+  }
+
+  const sourceText = input.sentence.sourceText.trim();
+  if (!sourceText) {
+    return existingSegments?.segments ?? null;
+  }
+
+  const client = getOpenAiClient();
+  if (!client) {
+    return existingSegments?.segments ?? null;
+  }
+
+  const updated = await translateSourceTextToBilingual({
+    client,
+    sourceText,
+    learningLanguage: input.sentence.learningLanguage,
+    knownLanguage: input.knownLanguage,
+  });
+
+  if (!updated) {
+    return existingSegments?.segments ?? null;
+  }
+
+  await ensureLearningTables();
+  const db = getDb();
+  await db
+    .updateTable("sentence_translations")
+    .set({
+      raw_sentence: updated.rawSentence,
+      translation_segments: JSON.stringify({
+        version: TRANSLATION_MODULE_VERSION,
+        segments: updated.translationSegments,
+      }),
+      translation_version: TRANSLATION_MODULE_VERSION,
+    })
+    .where("id", "=", input.sentence.id)
+    .executeTakeFirst();
+
+  return updated.translationSegments;
+}
+
 export async function createSentenceExerciseFromPrompt(input: {
   topic: string;
   userId: number;
@@ -595,17 +779,20 @@ export async function createSentenceExerciseFromPrompt(input: {
   const aiSentence = await generateFromOpenAI(input);
   const rawSentence = aiSentence?.rawSentence ?? fallbackSentence(input.topic, input.learningLanguage);
   const sourceText = aiSentence?.sourceText ?? fallbackSourceSentence(input.topic, input.learningLanguage);
+  const translationSegments = aiSentence?.translationSegments ?? buildFallbackSegments(input.topic, input.learningLanguage);
   const sourceTextAudioPromise = aiSentence?.sourceTextAudioPromise ?? generateSpeechFromOpenAI(sourceText);
   const sentenceId = await saveGeneratedSentence({
     topic: input.topic,
     learningLanguage: input.learningLanguage,
     rawSentence,
     sourceText,
+    translationSegments,
+    translationVersion: TRANSLATION_MODULE_VERSION,
   });
 
   const exercise = await createSentenceExerciseFromRawSentence({
     sentenceId,
-    sentence: rawSentence,
+    segments: translationSegments,
     userId: input.userId,
     learningLanguage: input.learningLanguage,
     knownLanguage: input.knownLanguage,
@@ -632,9 +819,17 @@ export async function createSentenceExerciseFromRandomSentence(input: {
     return createSentenceExerciseFromPrompt(input);
   }
 
+  const translationSegments = await refreshSentenceSegmentsIfNeeded({
+    sentence: savedSentence,
+    knownLanguage: input.knownLanguage,
+  });
+  if (!translationSegments?.length) {
+    return createSentenceExerciseFromPrompt(input);
+  }
+
   const exercise = await createSentenceExerciseFromRawSentence({
     sentenceId: savedSentence.id,
-    sentence: savedSentence.rawSentence,
+    segments: translationSegments,
     userId: input.userId,
     learningLanguage: input.learningLanguage,
     knownLanguage: input.knownLanguage,
@@ -661,9 +856,17 @@ export async function createSentenceExerciseFromSentenceId(input: {
     return createSentenceExerciseFromRandomSentence(input);
   }
 
+  const translationSegments = await refreshSentenceSegmentsIfNeeded({
+    sentence: savedSentence,
+    knownLanguage: input.knownLanguage,
+  });
+  if (!translationSegments?.length) {
+    return createSentenceExerciseFromRandomSentence(input);
+  }
+
   const exercise = await createSentenceExerciseFromRawSentence({
     sentenceId: savedSentence.id,
-    sentence: savedSentence.rawSentence,
+    segments: translationSegments,
     userId: input.userId,
     learningLanguage: input.learningLanguage,
     knownLanguage: input.knownLanguage,
