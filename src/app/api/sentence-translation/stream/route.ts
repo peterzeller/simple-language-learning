@@ -8,7 +8,7 @@ import {
   type SentenceStreamingPayload,
 } from "@/lib/sentence-translation";
 import { LANGUAGE_LABELS, isSupportedLearningLanguage } from "@/lib/language-settings";
-import { alignBilingualPairsWithOriginalText, parseBilingualSentence } from "@/lib/parse-bilingual-sentence";
+import { parseBilingualSentence } from "@/lib/parse-bilingual-sentence";
 import OpenAI from "openai";
 
 export const dynamic = "force-dynamic";
@@ -182,10 +182,7 @@ export async function POST(request: Request): Promise<Response> {
             return;
           }
 
-          const finalSegments = alignBilingualPairsWithOriginalText(
-            streamed.sourceText,
-            parseBilingualSentence(translated.sentence),
-          );
+          const finalSegments = parseBilingualSentence(translated.sentence);
 
           const sentenceId = await saveGeneratedSentence({
             topic,

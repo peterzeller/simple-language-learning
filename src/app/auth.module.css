@@ -8,6 +8,12 @@
     linear-gradient(180deg, var(--page-gradient-start) 0%, var(--page-gradient-end) 100%);
 }
 
+@media (max-width: 640px) {
+  .page {
+    padding: 0;
+  }
+}
+
 .card {
   width: min(100%, 460px);
   display: grid;
@@ -311,14 +317,25 @@
   margin-top: 40px;
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: 0px;
+}
+
+.textToken {
+  line-height: 1.2rem;
+  white-space: pre;
+  padding-top: 0.6rem;
+  color: var(--text-primary);
+}
+
+.lineBreak {
+  flex-basis: 100%;
 }
 
 .wordCard {
   border: 1px solid var(--surface-elevated);
   border-radius: 10px;
   background: var(--surface-elevated);
-  padding: 8px 10px;
+  padding: 0;
   min-height: 46px;
   display: inline-flex;
   flex-direction: column;
@@ -493,8 +510,8 @@
 @media (max-width: 640px) {
   .card,
   .sessionCard {
-    padding: 24px;
-    border-radius: 24px;
+    padding: 10px;
+    border-radius: 0;
   }
 }
 

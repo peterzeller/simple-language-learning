@@ -41,7 +41,7 @@ export default async function RootLayout({
           {themeInitializationScript}
         </Script>
         <NextIntlClientProvider locale={locale} messages={messages}>
-          <div style={{ display: "flex", gap: "0.75rem", justifyContent: "flex-end", padding: "1rem" }}>
+          <div style={{ display: "flex", gap: "0.75rem", justifyContent: "flex-start", padding: "1rem" }}>
             <Link href="/settings">{t("common.settings")}</Link>
             <ThemeToggle />
           </div>

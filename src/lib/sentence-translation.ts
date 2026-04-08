@@ -12,7 +12,6 @@ import {
   storeTranslationPairs,
 } from "@/lib/learning";
 import {
-  alignBilingualPairsWithOriginalText,
   parseBilingualSentence,
   type AlignedBilingualSegment,
 } from "@/lib/parse-bilingual-sentence";
@@ -54,7 +53,15 @@ export interface SentenceStreamingPayload {
   message?: string;
 }
 
-const TRANSLATION_MODULE_VERSION = 2;
+export interface SentenceStreamingPayload {
+  type: "source_delta" | "draft_exercise" | "final_exercise" | "error";
+  delta?: string;
+  sourceText?: string;
+  exercise?: SentenceExercise;
+  message?: string;
+}
+
+const TRANSLATION_MODULE_VERSION = 6;
 
 interface SavedSentenceRow {
   id: number;
@@ -178,9 +185,10 @@ async function requestOpenAiJson<T>(input: {
   schema: Record<string, unknown>;
   useWebSearch: boolean;
   verbosity?: "low" | "medium" | "high";
+  model?: string;
 }): Promise<T | null> {
   const response = await input.client.responses.create({
-    model: "gpt-5.4-mini",
+    model: input.model ?? "gpt-5.4-mini",
     input: [
       { role: "system", content: input.systemPrompt },
       { role: "user", content: input.userPrompt },
@@ -223,9 +231,11 @@ async function translateSourceTextToBilingual(input: {
 
   const translationSystemPrompt = [
     `Convert ${learningLanguageLabel} text into bilingual token format.`,
-    `Each token must be in this format: (${learningLanguageLabel}|${knownLanguageLabel}).`,
+    `Each single word must be in this format: ⦅${learningLanguageLabel}‖${knownLanguageLabel}⦆.`,
     `Use honest, literal ${knownLanguageLabel} translations; do not smooth grammar for naturalness.`,
-    "Do not merge tokens. Keep token order and punctuation aligned to the source text.",
+    "Do not merge words, translate each word individually. Keep punctuation and spacing outside the translated words.",
+    "Example input: ¡Hola! ¿Cómo estás? Compré algunas frutas: plátanos, manzanas y naranjas.",
+    "Example output: ¡⦅Hola‖Hello⦆! ¿⦅Cómo‖How⦆ ⦅estás‖are you⦆? ⦅Compré‖I bought⦆ ⦅algunas‖some⦆ ⦅frutas‖fruits⦆: ⦅plátanos‖bananas⦆, ⦅manzanas‖apples⦆ y ⦅naranjas‖oranges⦆.",
     "Output valid JSON only with a single key named \"sentence\".",
   ].join(" ");
 
@@ -251,13 +261,11 @@ async function translateSourceTextToBilingual(input: {
     return null;
   }
 
-  const pairs = parseBilingualSentence(sentence);
+  const translationSegments = parseBilingualSentence(sentence);
 
-  if (pairs.length === 0) {
+  if (translationSegments.length === 0) {
     return null;
   }
-
-  const translationSegments = alignBilingualPairsWithOriginalText(input.sourceText, pairs);
 
   return {
     rawSentence: sentence,
@@ -457,6 +465,22 @@ const inFlightSpeechGenerationByText = new Map<string, {
   promise: Promise<Buffer | null>;
 }>();
 const TTS_IN_FLIGHT_TTL_MS = 5 * 60 * 1000;
+const MALE_TTS_VOICES = ["ash", "echo", "verse", "cedar"] as const;
+const FEMALE_TTS_VOICES = ["alloy", "coral", "sage", "shimmer", "marin"] as const;
+const TTS_SYSTEM_PROMPT = [
+  "Narrate like an engaging storyteller giving a short talk.",
+  "Use warm energy, expressive pacing, and clear articulation.",
+  "Emphasize vivid words naturally and keep the tone lively but authentic.",
+].join(" ");
+
+function randomItem<T>(items: readonly T[]): T {
+  return items[Math.floor(Math.random() * items.length)] ?? items[0];
+}
+
+function pickRandomTtsVoice(): string {
+  const voicePool = Math.random() < 0.5 ? MALE_TTS_VOICES : FEMALE_TTS_VOICES;
+  return randomItem(voicePool);
+}
 
 async function requestSpeechFromOpenAI(text: string): Promise<Buffer | null> {
   const client = getOpenAiClient();
@@ -468,7 +492,8 @@ async function requestSpeechFromOpenAI(text: string): Promise<Buffer | null> {
   try {
     const speechResponse = await client.audio.speech.create({
       model: "gpt-4o-mini-tts",
-      voice: "alloy",
+      voice: pickRandomTtsVoice(),
+      instructions: TTS_SYSTEM_PROMPT,
       format: "mp3",
       input: text,
     });
@@ -640,9 +665,8 @@ function fallbackSentence(topic: string, learningLanguage: string): string {
 }
 
 function buildFallbackSegments(topic: string, learningLanguage: string): AlignedBilingualSegment[] {
-  const sourceText = fallbackSourceSentence(topic, learningLanguage);
   const sentence = fallbackSentence(topic, learningLanguage);
-  return alignBilingualPairsWithOriginalText(sourceText, parseBilingualSentence(sentence));
+  return parseBilingualSentence(sentence);
 }
 
 function parseStoredSegments(serialized: string): StoredTranslationPayload | null {
