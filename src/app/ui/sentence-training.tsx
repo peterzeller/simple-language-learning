@@ -21,9 +21,12 @@ interface AnswerState {
 
 export function SentenceTraining({ exercise }: SentenceTrainingProps) {
   const t = useTranslations();
+  const playbackSpeedOptions = useMemo(() => [0.5, 0.75, 1, 1.25, 1.5, 2], []);
   const [revealedWords, setRevealedWords] = useState<Record<number, boolean>>({});
   const [answers, setAnswers] = useState<Record<number, AnswerState>>({});
   const [activeQuestionIndex, setActiveQuestionIndex] = useState<number | null>(null);
+  const [isSpeedDialogOpen, setIsSpeedDialogOpen] = useState(false);
+  const [playbackSpeed, setPlaybackSpeed] = useState(1);
   const [isPending, startTransition] = useTransition();
   const [isAudioPending, setIsAudioPending] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
@@ -35,6 +38,8 @@ export function SentenceTraining({ exercise }: SentenceTrainingProps) {
   const loadingSentenceIdRef = useRef<number | null>(null);
   const trackRef = useRef<HTMLButtonElement | null>(null);
   const restartTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const speedDialogLongPressTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const suppressNextTrackClickRef = useRef(false);
   const logPlaybackError = useCallback((context: string, error: unknown) => {
     if (error instanceof DOMException) {
       console.warn(`[sentence-training] ${context}`, {
@@ -99,6 +104,7 @@ export function SentenceTraining({ exercise }: SentenceTrainingProps) {
     }
 
     const audio = audioRef.current;
+    audio.playbackRate = playbackSpeed;
 
     const syncPlaybackProgress = () => {
       if (!Number.isFinite(audio.duration) || audio.duration <= 0) {
@@ -160,6 +166,10 @@ export function SentenceTraining({ exercise }: SentenceTrainingProps) {
         clearTimeout(restartTimeoutRef.current);
         restartTimeoutRef.current = null;
       }
+      if (speedDialogLongPressTimeoutRef.current) {
+        clearTimeout(speedDialogLongPressTimeoutRef.current);
+        speedDialogLongPressTimeoutRef.current = null;
+      }
 
       audio.pause();
       audio.currentTime = 0;
@@ -172,7 +182,30 @@ export function SentenceTraining({ exercise }: SentenceTrainingProps) {
       audio.removeEventListener("pause", handlePause);
       audio.removeEventListener("play", handlePlay);
     };
-  }, [exercise.sentenceId, logPlaybackError]);
+  }, [exercise.sentenceId, logPlaybackError, playbackSpeed]);
+
+  const openSpeedDialog = () => {
+    setIsSpeedDialogOpen(true);
+  };
+
+  const clearLongPressTimeout = () => {
+    if (speedDialogLongPressTimeoutRef.current) {
+      clearTimeout(speedDialogLongPressTimeoutRef.current);
+      speedDialogLongPressTimeoutRef.current = null;
+    }
+  };
+
+  const handleTrackTouchStart = () => {
+    clearLongPressTimeout();
+    speedDialogLongPressTimeoutRef.current = setTimeout(() => {
+      suppressNextTrackClickRef.current = true;
+      openSpeedDialog();
+    }, 500);
+  };
+
+  const handleTrackTouchEnd = () => {
+    clearLongPressTimeout();
+  };
 
   const questionByIndex = useMemo(
     () => new Map(exercise.questions.map((question) => [question.tokenIndex, question])),
@@ -186,6 +219,11 @@ export function SentenceTraining({ exercise }: SentenceTrainingProps) {
   const activeToken = activeTokenCandidate?.kind === "word" ? activeTokenCandidate : undefined;
 
   const seekFromTrackClick = async (event: React.MouseEvent<HTMLButtonElement>) => {
+    if (suppressNextTrackClickRef.current) {
+      suppressNextTrackClickRef.current = false;
+      return;
+    }
+
     if (!audioRef.current || !trackRef.current) {
       return;
     }
@@ -258,6 +296,7 @@ export function SentenceTraining({ exercise }: SentenceTrainingProps) {
     }
 
     try {
+      audioRef.current.playbackRate = playbackSpeed;
       await audioRef.current.play();
     } catch (error) {
       logPlaybackError("User-triggered playback failed", error);
@@ -282,7 +321,20 @@ export function SentenceTraining({ exercise }: SentenceTrainingProps) {
           >
             {isAudioPending ? "…" : isPlaying ? "❚❚" : "▶"}
           </button>
-          <button className={styles.playbackTrack} onClick={seekFromTrackClick} ref={trackRef} type="button">
+          <button
+            aria-label={t("sentence.audioSpeedMenuLabel", { speed: playbackSpeed })}
+            className={styles.playbackTrack}
+            onClick={seekFromTrackClick}
+            onContextMenu={(event) => {
+              event.preventDefault();
+              openSpeedDialog();
+            }}
+            onTouchCancel={handleTrackTouchEnd}
+            onTouchEnd={handleTrackTouchEnd}
+            onTouchStart={handleTrackTouchStart}
+            ref={trackRef}
+            type="button"
+          >
             <div className={styles.playbackProgress} style={{ height: `${playbackProgress * 100}%` }} />
           </button>
         </div>
@@ -414,6 +466,40 @@ export function SentenceTraining({ exercise }: SentenceTrainingProps) {
                 </button>
               );
             })}
+          </div>
+        </dialog>
+      )}
+
+      {isSpeedDialogOpen && (
+        <dialog className={styles.translationDialog} onClose={() => setIsSpeedDialogOpen(false)} open>
+          <div className={styles.dialogHeading}>
+            <h2>{t("sentence.audioSpeedDialogTitle")}</h2>
+            <button
+              aria-label={t("sentence.closeDialog")}
+              className={styles.dialogClose}
+              onClick={() => setIsSpeedDialogOpen(false)}
+              type="button"
+            >
+              ×
+            </button>
+          </div>
+          <div className={styles.optionsGrid}>
+            {playbackSpeedOptions.map((speed) => (
+              <button
+                className={`${styles.optionButton} ${playbackSpeed === speed ? styles.optionCorrect : ""}`}
+                key={speed}
+                onClick={() => {
+                  setPlaybackSpeed(speed);
+                  if (audioRef.current) {
+                    audioRef.current.playbackRate = speed;
+                  }
+                  setIsSpeedDialogOpen(false);
+                }}
+                type="button"
+              >
+                {t("sentence.audioSpeedOption", { speed })}
+              </button>
+            ))}
           </div>
         </dialog>
       )}
