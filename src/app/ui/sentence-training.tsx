@@ -290,11 +290,16 @@ export function SentenceTraining({ exercise }: SentenceTrainingProps) {
         <div className={styles.sentenceLine}>
           {exercise.tokens.map((token, index) => {
             if (token.kind === "text") {
-              return (
-                <span key={`text-${index}`} style={{ whiteSpace: "pre-wrap" }}>
-                  {token.text}
+              const parts = token.text.split("\n")
+
+              return parts.flatMap((part, partIndex) => (
+                [
+                partIndex > 0 ? <span key={`br-${index}-${partIndex}`} className={styles.lineBreak} /> : null,
+                <span key={`text-${index}-${partIndex}`} className={styles.textToken}>
+                  {part}
                 </span>
-              );
+                ]
+              ));
             }
 
             const question = questionByIndex.get(index);
