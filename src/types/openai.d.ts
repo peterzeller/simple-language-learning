@@ -16,6 +16,7 @@ declare module "openai" {
   export interface SpeechCreateParams {
     model: string;
     voice: string;
+    instructions?: string;
     format: "mp3";
     input: string;
   }
