@@ -347,6 +347,22 @@ const inFlightSpeechGenerationByText = new Map<string, {
   promise: Promise<Buffer | null>;
 }>();
 const TTS_IN_FLIGHT_TTL_MS = 5 * 60 * 1000;
+const MALE_TTS_VOICES = ["ash", "echo", "verse", "cedar"] as const;
+const FEMALE_TTS_VOICES = ["alloy", "coral", "sage", "shimmer", "marin"] as const;
+const TTS_SYSTEM_PROMPT = [
+  "Narrate like an engaging storyteller giving a short talk.",
+  "Use warm energy, expressive pacing, and clear articulation.",
+  "Emphasize vivid words naturally and keep the tone lively but authentic.",
+].join(" ");
+
+function randomItem<T>(items: readonly T[]): T {
+  return items[Math.floor(Math.random() * items.length)] ?? items[0];
+}
+
+function pickRandomTtsVoice(): string {
+  const voicePool = Math.random() < 0.5 ? MALE_TTS_VOICES : FEMALE_TTS_VOICES;
+  return randomItem(voicePool);
+}
 
 async function requestSpeechFromOpenAI(text: string): Promise<Buffer | null> {
   const client = getOpenAiClient();
@@ -358,7 +374,8 @@ async function requestSpeechFromOpenAI(text: string): Promise<Buffer | null> {
   try {
     const speechResponse = await client.audio.speech.create({
       model: "gpt-4o-mini-tts",
-      voice: "alloy",
+      voice: pickRandomTtsVoice(),
+      instructions: TTS_SYSTEM_PROMPT,
       format: "mp3",
       input: text,
     });
