@@ -1,7 +1,6 @@
 :root {
   --background: #edf6f1;
   --foreground: #17322d;
-  --page-background-image: url("/djungle.png");
 
   --surface: rgba(246, 252, 249, 0.9);
   --surface-muted: #dcefe7;
@@ -41,7 +40,6 @@
 :root[data-theme="dark"] {
   --background: #07141d;
   --foreground: #e6f1f7;
-  --page-background-image: url("/djungle-dark.png");
 
   --surface: rgba(10, 22, 33, 0.88);
   --surface-muted: #112b3b;
@@ -82,7 +80,6 @@
   :root:not([data-theme]) {
     --background: #07141d;
     --foreground: #e6f1f7;
-    --page-background-image: url("/djungle-dark.png");
 
     --surface: rgba(10, 22, 33, 0.88);
     --surface-muted: #112b3b;
@@ -131,19 +128,72 @@ body {
 }
 
 body {
+  position: relative;
+  isolation: isolate;
   min-height: 100%;
   display: flex;
   flex-direction: column;
   color: var(--foreground);
   background-color: var(--background);
-  background-image: var(--page-background-image);
-  background-attachment: fixed;
-  background-position: center;
-  background-repeat: no-repeat;
-  background-size: cover;
   font-family: Arial, Helvetica, sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  transition: background-color 320ms ease, color 320ms ease;
+}
+
+body::before,
+body::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  background-position: center;
+  background-repeat: no-repeat;
+  background-size: cover;
+  will-change: opacity;
+  transition: opacity 420ms ease;
+  z-index: 0;
+}
+
+body::before {
+  background-image: url("/djungle.png");
+  opacity: 1;
+}
+
+body::after {
+  background-image: url("/djungle-dark.png");
+  opacity: 0;
+}
+
+body > * {
+  position: relative;
+  z-index: 1;
+}
+
+html[data-theme="dark"] body::after {
+  opacity: 1;
+}
+
+html[data-theme="dark"] body::before {
+  opacity: 0;
+}
+
+@media (prefers-color-scheme: dark) {
+  html:not([data-theme]) body::after {
+    opacity: 1;
+  }
+
+  html:not([data-theme]) body::before {
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  body,
+  body::before,
+  body::after {
+    transition: none;
+  }
 }
 
 * {
