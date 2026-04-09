@@ -6,6 +6,7 @@ import { NextIntlClientProvider } from "next-intl";
 import { ThemeToggle } from "@/app/ui/theme-toggle";
 import { getLocale, getMessages, getTranslations } from "@/i18n";
 import "./globals.css";
+import styles from "@/app/auth.module.css";
 
 export const metadata: Metadata = {
   title: "Simple Language Learning",
@@ -41,7 +42,7 @@ export default async function RootLayout({
           {themeInitializationScript}
         </Script>
         <NextIntlClientProvider locale={locale} messages={messages}>
-          <div style={{ display: "flex", gap: "0.75rem", justifyContent: "flex-start", padding: "1rem" }}>
+          <div className={styles.topBar} >
             <Link href="/settings">{t("common.settings")}</Link>
             <ThemeToggle />
           </div>
