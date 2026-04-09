@@ -380,7 +380,7 @@
 
 .textToken {
   line-height: 1.2rem;
-  white-space: pre;
+  white-space: pre-wrap;
   padding-top: 0.6rem;
   color: var(--text-primary);
 }
