@@ -252,6 +252,66 @@
   gap: 10px;
 }
 
+.card,
+.sessionCard,
+.statsCard,
+.statsTable,
+.statsTable th,
+.statsTable td,
+.gameCard,
+.emailPill,
+.field,
+.field input,
+.field select,
+.error,
+.helperText,
+.helperText a,
+.helperLink,
+.primaryButton,
+.secondaryButton,
+.playbackRail,
+.playbackButton,
+.playbackTrack,
+.playbackProgress,
+.textToken,
+.wordCard {
+  transition:
+    color 320ms ease,
+    background-color 320ms ease,
+    background 320ms ease,
+    border-color 320ms ease,
+    box-shadow 320ms ease,
+    outline-color 320ms ease;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .card,
+  .sessionCard,
+  .statsCard,
+  .statsTable,
+  .statsTable th,
+  .statsTable td,
+  .gameCard,
+  .emailPill,
+  .field,
+  .field input,
+  .field select,
+  .error,
+  .helperText,
+  .helperText a,
+  .helperLink,
+  .primaryButton,
+  .secondaryButton,
+  .playbackRail,
+  .playbackButton,
+  .playbackTrack,
+  .playbackProgress,
+  .textToken,
+  .wordCard {
+    transition: none;
+  }
+}
+
 
 
 .sentencePlaybackLayout {
