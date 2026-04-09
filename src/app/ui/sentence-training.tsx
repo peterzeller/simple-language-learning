@@ -32,7 +32,7 @@ export function SentenceTraining({ exercise }: SentenceTrainingProps) {
   const [isPlaying, setIsPlaying] = useState(false);
   const [playbackProgress, setPlaybackProgress] = useState(0);
   const [audioError, setAudioError] = useState<string | null>(null);
-  const audioLoadErrorMessage = t("sentence.audioLoadError");
+  const audioBlockedMessage = t("sentence.audioBlocked");
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const loadedSentenceIdRef = useRef<number | null>(null);
   const loadingSentenceIdRef = useRef<number | null>(null);
@@ -69,25 +69,7 @@ export function SentenceTraining({ exercise }: SentenceTrainingProps) {
     loadingSentenceIdRef.current = exercise.sentenceId;
     const audioSource = `/api/sentence-audio/${exercise.sentenceId}`;
 
-    const resolvedSource = (() => {
-      try {
-        return new URL(audioSource, window.location.origin).toString();
-      } catch (error) {
-        console.error("[sentence-training] Invalid audio URL returned by getSentenceAudio", {
-          sentenceId: exercise.sentenceId,
-          audioSource,
-          error,
-        });
-        return null;
-      }
-    })();
-
-    if (!resolvedSource) {
-      setIsAudioPending(false);
-      loadingSentenceIdRef.current = null;
-      setAudioError(audioLoadErrorMessage);
-      return false;
-    }
+    const resolvedSource = new URL(audioSource, window.location.origin).toString();
 
     audioRef.current.src = resolvedSource;
     audioRef.current.load();
@@ -96,7 +78,7 @@ export function SentenceTraining({ exercise }: SentenceTrainingProps) {
     setIsAudioPending(false);
     setPlaybackProgress(0);
     return true;
-  }, [audioLoadErrorMessage, exercise.sentenceId]);
+  }, [exercise.sentenceId]);
 
   useEffect(() => {
     if (!audioRef.current) {
@@ -135,6 +117,7 @@ export function SentenceTraining({ exercise }: SentenceTrainingProps) {
           await audio.play();
         } catch (error) {
           logPlaybackError("Auto-replay failed", error);
+          setAudioError(audioBlockedMessage);
         }
       }, 2000);
     };
@@ -182,7 +165,7 @@ export function SentenceTraining({ exercise }: SentenceTrainingProps) {
       audio.removeEventListener("pause", handlePause);
       audio.removeEventListener("play", handlePlay);
     };
-  }, [exercise.sentenceId, logPlaybackError, playbackSpeed]);
+  }, [audioBlockedMessage, exercise.sentenceId, logPlaybackError, playbackSpeed]);
 
   const openSpeedDialog = () => {
     setIsSpeedDialogOpen(true);
