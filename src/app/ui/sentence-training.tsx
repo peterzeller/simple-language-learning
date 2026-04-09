@@ -136,6 +136,11 @@ export function SentenceTraining({ exercise }: SentenceTrainingProps) {
       syncPlaybackProgress();
     };
 
+    const handleCanPlay = () => {
+      setIsAudioPending(false);
+      audio.playbackRate = playbackSpeed;
+    };
+
     audio.addEventListener("timeupdate", syncPlaybackProgress);
     audio.addEventListener("loadedmetadata", syncPlaybackProgress);
     audio.addEventListener("durationchange", syncPlaybackProgress);
@@ -143,6 +148,7 @@ export function SentenceTraining({ exercise }: SentenceTrainingProps) {
     audio.addEventListener("ended", handleEnded);
     audio.addEventListener("pause", handlePause);
     audio.addEventListener("play", handlePlay);
+    audio.addEventListener("canplay", handleCanPlay);
 
     return () => {
       if (restartTimeoutRef.current) {
@@ -164,8 +170,9 @@ export function SentenceTraining({ exercise }: SentenceTrainingProps) {
       audio.removeEventListener("ended", handleEnded);
       audio.removeEventListener("pause", handlePause);
       audio.removeEventListener("play", handlePlay);
+      audio.removeEventListener("canplay", handleCanPlay);
     };
-  }, [audioBlockedMessage, exercise.sentenceId, logPlaybackError, playbackSpeed]);
+  }, [audioBlockedMessage, exercise.sentenceId, logPlaybackError]);
 
   const openSpeedDialog = () => {
     setIsSpeedDialogOpen(true);
@@ -268,6 +275,7 @@ export function SentenceTraining({ exercise }: SentenceTrainingProps) {
 
     if (isPlaying) {
       audioRef.current.pause();
+      setIsPlaying(false);
       return;
     }
 
@@ -279,8 +287,9 @@ export function SentenceTraining({ exercise }: SentenceTrainingProps) {
     }
 
     try {
-      audioRef.current.playbackRate = playbackSpeed;
       await audioRef.current.play();
+      audioRef.current.playbackRate = playbackSpeed;
+      setIsPlaying(true);
     } catch (error) {
       logPlaybackError("User-triggered playback failed", error);
       setAudioError(t("sentence.audioBlocked"));
