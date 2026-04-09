@@ -196,7 +196,8 @@ async function requestOpenAiJson<T>(input: {
 
   try {
     return JSON.parse(outputText) as T;
-  } catch {
+  } catch (error) {
+    console.error("Failed to parse OpenAI JSON response.", { error, outputText });
     return null;
   }
 }
@@ -336,8 +337,8 @@ async function generateFromOpenAI(input: {
       sourceTextAudioPromise,
       translationSegments: translationResponse.translationSegments,
     };
-  } catch (e) {
-    console.error("Error generating sentence from OpenAI:", e);
+  } catch (error) {
+    console.error("Error generating sentence from OpenAI:", error);
     return null;
   }
 }
@@ -425,13 +426,13 @@ function generateSpeechFromOpenAI(text: string): Promise<Buffer | null> {
   }, TTS_IN_FLIGHT_TTL_MS);
 
   evictionTimer.unref();
-  generationPromise.finally(() => {
+  void generationPromise.finally(() => {
     clearTimeout(evictionTimer);
     const activeGeneration = inFlightSpeechGenerationByText.get(normalizedText);
     if (activeGeneration?.promise === generationPromise) {
       inFlightSpeechGenerationByText.delete(normalizedText);
     }
-  }).catch(() => undefined);
+  });
 
   return generationPromise;
 }
@@ -570,7 +571,8 @@ function parseStoredSegments(serialized: string): StoredTranslationPayload | nul
       && typeof (item as { translation?: unknown }).translation === "string"
     )) as AlignedBilingualSegment[];
     return { version: Number(version), segments: filteredSegments };
-  } catch {
+  } catch (error) {
+    console.warn("Failed to parse stored translation segments.", { error, serialized });
     return null;
   }
 }
