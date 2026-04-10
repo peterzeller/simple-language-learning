@@ -25,6 +25,10 @@ declare module "openai" {
     constructor(options: { apiKey: string });
     responses: {
       create(params: ResponseCreateParams): Promise<{ output_text: string }>;
+      stream(params: ResponseCreateParams): {
+        on(event: "response.output_text.delta", listener: (event: { delta: string }) => void): void;
+        done(): Promise<void>;
+      };
     };
     audio: {
       speech: {
