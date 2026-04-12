@@ -60,6 +60,8 @@ export const messages = {
       description: "Choose the language used for the user interface.",
       learnLanguage: "Language you want to learn",
       knownLanguage: "Language you already know",
+      openAiApiKey: "Your OpenAI API key",
+      openAiMonthlyLimit: "Your monthly OpenAI limit (USD)",
     },
     stats: {
       wordKnowledge: "Word knowledge",
@@ -157,6 +159,8 @@ export const messages = {
       description: "Wähle die Sprache für die Benutzeroberfläche.",
       learnLanguage: "Sprache, die du lernen willst",
       knownLanguage: "Sprache, die du bereits kannst",
+      openAiApiKey: "Dein OpenAI-API-Schlüssel",
+      openAiMonthlyLimit: "Dein monatliches OpenAI-Limit (USD)",
     },
     stats: {
       wordKnowledge: "Wortkenntnis",

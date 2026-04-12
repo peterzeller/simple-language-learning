@@ -29,6 +29,14 @@ export default async function AdminPage() {
               Open sentences
             </Link>
           </article>
+
+          <article className={styles.gameCard}>
+            <h2>Users</h2>
+            <p>Manage monthly OpenAI budget limits for each user.</p>
+            <Link className={styles.primaryButton} href="/admin/users">
+              Open users
+            </Link>
+          </article>
         </div>
 
         <Link className={styles.helperLink} href="/">

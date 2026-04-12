@@ -12,6 +12,8 @@ export async function saveSettings(formData: FormData): Promise<void> {
   const locale = String(formData.get("locale") ?? "");
   const learningLanguage = String(formData.get("learningLanguage") ?? "");
   const knownLanguage = String(formData.get("knownLanguage") ?? "");
+  const userOpenAiApiKey = String(formData.get("openAiApiKey") ?? "").trim();
+  const userOpenAiMonthlyLimit = Number(formData.get("openAiMonthlyLimitUsd") ?? "0");
 
   if (!isLocale(locale)) {
     redirect("/settings");
@@ -21,6 +23,9 @@ export async function saveSettings(formData: FormData): Promise<void> {
     || !isSupportedLearningLanguage(knownLanguage)
     || learningLanguage === knownLanguage
   ) {
+    redirect("/settings");
+  }
+  if (!Number.isFinite(userOpenAiMonthlyLimit) || userOpenAiMonthlyLimit < 0) {
     redirect("/settings");
   }
 
@@ -37,6 +42,8 @@ export async function saveSettings(formData: FormData): Promise<void> {
       .set({
         learning_language: learningLanguage,
         known_language: knownLanguage,
+        openai_api_key: userOpenAiApiKey || null,
+        openai_api_key_monthly_limit_usd: userOpenAiMonthlyLimit.toFixed(4),
         updated_at: new Date(),
       })
       .where("id", "=", user.id)
