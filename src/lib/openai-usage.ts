@@ -8,7 +8,7 @@ import { ensureLearningTables, ensureUsersTable, getDb } from "@/lib/db";
 interface ResolvedOpenAiAccess {
   client: OpenAI;
   apiKeyId: number;
-  modelLimitUsd: number;
+  keySource: "system" | "user";
 }
 
 const MODEL_PRICING_PER_1M_TOKENS: Record<string, { input: number; output: number; cachedInput?: number }> = {
@@ -105,7 +105,7 @@ export async function resolveOpenAiAccess(userId: number): Promise<ResolvedOpenA
   return {
     client: new OpenAI({ apiKey }),
     apiKeyId: keyRow.id,
-    modelLimitUsd,
+    keySource: hasOwnApiKey ? "user" : "system",
   };
 }
 

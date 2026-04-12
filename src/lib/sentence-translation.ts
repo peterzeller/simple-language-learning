@@ -159,6 +159,7 @@ async function requestOpenAiJson<T>(input: {
   client: OpenAI;
   userId: number;
   apiKeyId: number;
+  keySource: "system" | "user";
   systemPrompt: string;
   userPrompt: string;
   schemaName: string;
@@ -168,48 +169,63 @@ async function requestOpenAiJson<T>(input: {
   model?: string;
 }): Promise<T | null> {
   const model = input.model ?? "gpt-5.4-mini";
-  const response = await input.client.responses.create({
-    model,
-    input: [
-      { role: "system", content: input.systemPrompt },
-      { role: "user", content: input.userPrompt },
-    ],
-    ...(input.useWebSearch ? { tools: [{ type: "web_search_preview" }] } : {}),
-    text: {
-      ...(input.verbosity ? { verbosity: input.verbosity } : {}),
-      format: {
-        type: "json_schema",
-        name: input.schemaName,
-        schema: input.schema,
-        strict: true,
-      },
-    },
-  });
-
-  const outputText = response.output_text;
-  const usage = response.usage;
-  const estimatedCost = estimateResponsesApiCostUsd({
-    model,
-    inputTokens: usage?.input_tokens ?? 0,
-    outputTokens: usage?.output_tokens ?? 0,
-    cachedInputTokens: usage?.input_tokens_details?.cached_tokens,
-  });
-
-  await recordOpenAiCallCost({
-    userId: input.userId,
-    apiKeyId: input.apiKeyId,
-    model,
-    costUsd: estimatedCost,
-  });
-
-  if (!outputText?.trim()) {
-    return null;
-  }
-
+  const startedAt = Date.now();
   try {
+    const response = await input.client.responses.create({
+      model,
+      input: [
+        { role: "system", content: input.systemPrompt },
+        { role: "user", content: input.userPrompt },
+      ],
+      ...(input.useWebSearch ? { tools: [{ type: "web_search_preview" }] } : {}),
+      text: {
+        ...(input.verbosity ? { verbosity: input.verbosity } : {}),
+        format: {
+          type: "json_schema",
+          name: input.schemaName,
+          schema: input.schema,
+          strict: true,
+        },
+      },
+    });
+
+    const outputText = response.output_text;
+    const usage = response.usage;
+    const estimatedCost = estimateResponsesApiCostUsd({
+      model,
+      inputTokens: usage?.input_tokens ?? 0,
+      outputTokens: usage?.output_tokens ?? 0,
+      cachedInputTokens: usage?.input_tokens_details?.cached_tokens,
+    });
+
+    await recordOpenAiCallCost({
+      userId: input.userId,
+      apiKeyId: input.apiKeyId,
+      model,
+      costUsd: estimatedCost,
+    });
+    logOpenAiCall({
+      operation: `responses.create:${model}`,
+      userId: input.userId,
+      keySource: input.keySource,
+      durationMs: Date.now() - startedAt,
+      costUsd: estimatedCost,
+    });
+
+    if (!outputText?.trim()) {
+      return null;
+    }
+
     return JSON.parse(outputText) as T;
   } catch (error) {
-    console.error("Failed to parse OpenAI JSON response.", { error, outputText });
+    logOpenAiCall({
+      operation: `responses.create:${model}`,
+      userId: input.userId,
+      keySource: input.keySource,
+      durationMs: Date.now() - startedAt,
+      costUsd: 0,
+    });
+    console.error("OpenAI responses.create failed.", { error });
     return null;
   }
 }
@@ -218,6 +234,7 @@ async function translateSourceTextToBilingual(input: {
   client: OpenAI;
   userId: number;
   apiKeyId: number;
+  keySource: "system" | "user";
   sourceText: string;
   learningLanguage: string;
   knownLanguage: string;
@@ -241,6 +258,7 @@ async function translateSourceTextToBilingual(input: {
     client: input.client,
     userId: input.userId,
     apiKeyId: input.apiKeyId,
+    keySource: input.keySource,
     systemPrompt: translationSystemPrompt,
     userPrompt: input.sourceText,
     schemaName: "bilingual_sentence_response",
@@ -315,6 +333,7 @@ async function generateFromOpenAI(input: {
       client,
       userId: input.userId,
       apiKeyId: access.apiKeyId,
+      keySource: access.keySource,
       systemPrompt: generationSystemPrompt,
       userPrompt: input.topic,
       schemaName: "source_text_response",
@@ -345,6 +364,7 @@ async function generateFromOpenAI(input: {
       client,
       userId: input.userId,
       apiKeyId: access.apiKeyId,
+      keySource: access.keySource,
       sourceText,
       learningLanguage: input.learningLanguage,
       knownLanguage: input.knownLanguage,
@@ -389,6 +409,22 @@ function pickRandomTtsVoice(): string {
   return randomItem(voicePool);
 }
 
+function logOpenAiCall(input: {
+  operation: string;
+  userId: number;
+  keySource: "system" | "user";
+  durationMs: number;
+  costUsd: number;
+}): void {
+  console.info("[OpenAI call]", {
+    operation: input.operation,
+    userId: input.userId,
+    keySource: input.keySource,
+    durationMs: input.durationMs,
+    costUsd: Number(input.costUsd.toFixed(6)),
+  });
+}
+
 async function requestSpeechFromOpenAI(input: {
   userId: number;
   sourceText: string;
@@ -400,6 +436,7 @@ async function requestSpeechFromOpenAI(input: {
     return null;
   }
 
+  const startedAt = Date.now();
   try {
     const speechResponse = await client.audio.speech.create({
       model: "gpt-4o-mini-tts",
@@ -416,6 +453,13 @@ async function requestSpeechFromOpenAI(input: {
       model: "gpt-4o-mini-tts",
       costUsd: estimatedCost,
     });
+    logOpenAiCall({
+      operation: "audio.speech.create:gpt-4o-mini-tts",
+      userId: input.userId,
+      keySource: access.keySource,
+      durationMs: Date.now() - startedAt,
+      costUsd: estimatedCost,
+    });
 
     const arrayBuffer = await speechResponse.arrayBuffer();
 
@@ -425,6 +469,13 @@ async function requestSpeechFromOpenAI(input: {
 
     return Buffer.from(arrayBuffer);
   } catch (error) {
+    logOpenAiCall({
+      operation: "audio.speech.create:gpt-4o-mini-tts",
+      userId: input.userId,
+      keySource: access.keySource,
+      durationMs: Date.now() - startedAt,
+      costUsd: 0,
+    });
     console.error("Error generating TTS audio from OpenAI:", error);
     return null;
   }
@@ -809,6 +860,7 @@ async function refreshSentenceSegmentsIfNeeded(input: {
     client,
     userId: input.userId,
     apiKeyId: access.apiKeyId,
+    keySource: access.keySource,
     sourceText,
     learningLanguage: input.sentence.learningLanguage,
     knownLanguage: input.knownLanguage,
