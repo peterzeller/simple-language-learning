@@ -112,6 +112,8 @@ export async function register(
       password_hash: passwordHash,
       learning_language: "es",
       known_language: "en",
+      openai_monthly_limit_usd: "0",
+      openai_api_key_monthly_limit_usd: "0",
       updated_at: new Date(),
     })
     .returning("id")

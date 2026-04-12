@@ -2,7 +2,7 @@
 
 import { redirect } from "next/navigation";
 
-import { ensureLearningTables, getDb } from "@/lib/db";
+import { ensureLearningTables, ensureUsersTable, getDb } from "@/lib/db";
 import { requireAdminUser } from "@/lib/admin-auth";
 
 function parseId(value: FormDataEntryValue | null, fieldName: string): number {
@@ -58,4 +58,28 @@ export async function deleteSentence(formData: FormData): Promise<void> {
     .executeTakeFirst();
 
   redirect("/admin/sentences");
+}
+
+export async function updateUserOpenAiLimit(formData: FormData): Promise<void> {
+  await requireAdminUser();
+  await ensureUsersTable();
+  const db = getDb();
+
+  const userId = parseId(formData.get("userId"), "user");
+  const monthlyLimitUsd = Number(formData.get("openAiMonthlyLimitUsd") ?? "0");
+
+  if (!Number.isFinite(monthlyLimitUsd) || monthlyLimitUsd < 0) {
+    throw new Error("Invalid OpenAI monthly limit.");
+  }
+
+  await db
+    .updateTable("users")
+    .set({
+      openai_monthly_limit_usd: monthlyLimitUsd.toFixed(4),
+      updated_at: new Date(),
+    })
+    .where("id", "=", userId)
+    .executeTakeFirst();
+
+  redirect("/admin/users?saved=1");
 }

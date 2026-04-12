@@ -18,7 +18,7 @@ export async function GET(
     return new Response("Invalid sentence id", { status: 400 });
   }
 
-  const audio = await getOrCreateSentenceAudio({ sentenceId });
+  const audio = await getOrCreateSentenceAudio({ sentenceId, userId: user.id });
 
   if (!audio) {
     return new Response("Audio not found", { status: 404 });

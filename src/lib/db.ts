@@ -11,6 +11,9 @@ interface UsersTable {
   password_hash: string;
   learning_language: string;
   known_language: string;
+  openai_monthly_limit_usd: string;
+  openai_api_key: string | null;
+  openai_api_key_monthly_limit_usd: string;
   session_token_hash: string | null;
   session_expires_at: TimestampColumn | null;
   created_at: Generated<TimestampColumn>;
@@ -55,6 +58,24 @@ interface SentenceAudioTable {
   created_at: Generated<TimestampColumn>;
 }
 
+interface OpenAiApiKeysTable {
+  id: Generated<number>;
+  user_id: number | null;
+  key_source: "system" | "user";
+  api_key: string;
+  created_at: Generated<TimestampColumn>;
+  updated_at: Generated<TimestampColumn>;
+}
+
+interface OpenAiApiCallCostsTable {
+  id: Generated<number>;
+  user_id: number;
+  api_key_id: number;
+  model: string;
+  cost_usd: string;
+  created_at: Generated<TimestampColumn>;
+}
+
 interface Database {
   users: UsersTable;
   words: WordsTable;
@@ -62,6 +83,8 @@ interface Database {
   user_learning: UserLearningTable;
   sentence_translations: SentenceTranslationsTable;
   sentence_audio: SentenceAudioTable;
+  openai_api_keys: OpenAiApiKeysTable;
+  openai_api_call_costs: OpenAiApiCallCostsTable;
 }
 
 declare global {
@@ -113,8 +136,15 @@ export async function ensureUsersTable(): Promise<void> {
     .addColumn("email", "varchar(320)", (column) => column.notNull())
     .addColumn("password_hash", "text", (column) => column.notNull())
     .addColumn("learning_language", "varchar(12)", (column) => column.notNull().defaultTo("es"))
-    .addColumn("known_language", "varchar(12)", (column) => column.notNull().defaultTo("en"))
-    .addColumn("session_token_hash", "varchar(64)")
+      .addColumn("known_language", "varchar(12)", (column) => column.notNull().defaultTo("en"))
+      .addColumn("openai_monthly_limit_usd", "numeric", (column) =>
+        column.notNull().defaultTo("0"),
+      )
+      .addColumn("openai_api_key", "text")
+      .addColumn("openai_api_key_monthly_limit_usd", "numeric", (column) =>
+        column.notNull().defaultTo("0"),
+      )
+      .addColumn("session_token_hash", "varchar(64)")
     .addColumn("session_expires_at", "timestamptz")
     .addColumn("created_at", "timestamptz", (column) =>
       column.notNull().defaultTo(sql`CURRENT_TIMESTAMP`),
@@ -134,6 +164,18 @@ export async function ensureUsersTable(): Promise<void> {
         ALTER TABLE users
         ADD COLUMN IF NOT EXISTS known_language varchar(12) NOT NULL DEFAULT 'en'
       `.execute(db);
+      await sql`
+        ALTER TABLE users
+        ADD COLUMN IF NOT EXISTS openai_monthly_limit_usd numeric(12,4) NOT NULL DEFAULT 0
+      `.execute(db);
+      await sql`
+        ALTER TABLE users
+        ADD COLUMN IF NOT EXISTS openai_api_key text
+      `.execute(db);
+      await sql`
+        ALTER TABLE users
+        ADD COLUMN IF NOT EXISTS openai_api_key_monthly_limit_usd numeric(12,4) NOT NULL DEFAULT 0
+      `.execute(db);
     })
     .then(() => undefined);
 
@@ -144,6 +186,60 @@ export async function ensureLearningTables(): Promise<void> {
   const db = getDb();
 
   globalThis.__simpleLanguageLearningLearningInit ??= (async () => {
+    await db.schema
+      .createTable("openai_api_keys")
+      .ifNotExists()
+      .addColumn("id", "integer", (column) =>
+        column.generatedAlwaysAsIdentity().primaryKey(),
+      )
+      .addColumn("user_id", "integer", (column) =>
+        column.references("users.id").onDelete("cascade"),
+      )
+      .addColumn("key_source", "varchar(16)", (column) => column.notNull())
+      .addColumn("api_key", "text", (column) => column.notNull())
+      .addColumn("created_at", "timestamptz", (column) =>
+        column.notNull().defaultTo(sql`CURRENT_TIMESTAMP`),
+      )
+      .addColumn("updated_at", "timestamptz", (column) =>
+        column.notNull().defaultTo(sql`CURRENT_TIMESTAMP`),
+      )
+      .addUniqueConstraint("openai_api_keys_user_id_key", ["user_id"])
+      .execute();
+
+    await db.schema
+      .createTable("openai_api_call_costs")
+      .ifNotExists()
+      .addColumn("id", "integer", (column) =>
+        column.generatedAlwaysAsIdentity().primaryKey(),
+      )
+      .addColumn("user_id", "integer", (column) =>
+        column.references("users.id").onDelete("cascade").notNull(),
+      )
+      .addColumn("api_key_id", "integer", (column) =>
+        column.references("openai_api_keys.id").onDelete("cascade").notNull(),
+      )
+      .addColumn("model", "varchar(64)", (column) => column.notNull())
+      .addColumn("cost_usd", "numeric", (column) => column.notNull())
+      .addColumn("created_at", "timestamptz", (column) =>
+        column.notNull().defaultTo(sql`CURRENT_TIMESTAMP`),
+      )
+      .execute();
+
+    await sql`
+      ALTER TABLE openai_api_keys
+      ADD COLUMN IF NOT EXISTS key_source varchar(16) NOT NULL DEFAULT 'user'
+    `.execute(db);
+
+    await sql`
+      ALTER TABLE openai_api_call_costs
+      ADD COLUMN IF NOT EXISTS model varchar(64) NOT NULL DEFAULT 'unknown'
+    `.execute(db);
+
+    await sql`
+      ALTER TABLE openai_api_call_costs
+      ADD COLUMN IF NOT EXISTS cost_usd numeric(12,6) NOT NULL DEFAULT 0
+    `.execute(db);
+
     await db.schema
       .createTable("words")
       .ifNotExists()
