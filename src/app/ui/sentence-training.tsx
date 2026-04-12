@@ -209,8 +209,6 @@ export function SentenceTraining({ exercise, onUseSuggestion, onPickRandomStory 
   const activeTokenCandidate =
     activeQuestionIndex !== null ? exercise.tokens[activeQuestionIndex] : undefined;
   const activeToken = activeTokenCandidate?.kind === "word" ? activeTokenCandidate : undefined;
-  const answeredQuestionsCount = Object.keys(answers).length;
-  const isExerciseComplete = exercise.questions.length > 0 && answeredQuestionsCount >= exercise.questions.length;
 
   const seekFromTrackClick = async (event: React.MouseEvent<HTMLButtonElement>) => {
     if (suppressNextTrackClickRef.current) {
@@ -502,32 +500,30 @@ export function SentenceTraining({ exercise, onUseSuggestion, onPickRandomStory 
       )}
 
       {isPending && <p className={styles.helperText}>{t("sentence.saving")}</p>}
-      {isExerciseComplete && (
-        <div className={styles.topicActions}>
-          <p className={styles.helperText}>{t("sentence.followUpSuggestions")}</p>
-          {exercise.storySuggestions.slice(0, 2).map((suggestion, index) => (
-            <button
-              className={styles.primaryButton}
-              key={`${suggestion.headline}-${index}`}
-              onClick={() => onUseSuggestion(suggestion.prompt)}
-              type="button"
-            >
-              {suggestion.headline}
-            </button>
-          ))}
-          <p className={styles.helperText}>{t("sentence.randomStorySuggestions")}</p>
-          {exercise.randomStories.slice(0, 2).map((story) => (
-            <button
-              className={styles.secondaryButton}
-              key={story.sentenceId}
-              onClick={() => onPickRandomStory(story.sentenceId)}
-              type="button"
-            >
-              {story.title}
-            </button>
-          ))}
-        </div>
-      )}
+      <div className={styles.topicActions}>
+        <p className={styles.helperText}>{t("sentence.followUpSuggestions")}</p>
+        {exercise.storySuggestions.slice(0, 2).map((suggestion, index) => (
+          <button
+            className={styles.primaryButton}
+            key={`${suggestion.headline}-${index}`}
+            onClick={() => onUseSuggestion(suggestion.prompt)}
+            type="button"
+          >
+            {suggestion.headline}
+          </button>
+        ))}
+        <p className={styles.helperText}>{t("sentence.randomStorySuggestions")}</p>
+        {exercise.randomStories.slice(0, 2).map((story) => (
+          <button
+            className={styles.secondaryButton}
+            key={story.sentenceId}
+            onClick={() => onPickRandomStory(story.sentenceId)}
+            type="button"
+          >
+            {story.title}
+          </button>
+        ))}
+      </div>
     </div>
   );
 }
