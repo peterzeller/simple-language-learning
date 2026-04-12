@@ -13,6 +13,7 @@ import styles from "@/app/auth.module.css";
 interface SentenceTrainingProps {
   exercise: SentenceExercise;
   onUseSuggestion: (prompt: string) => void;
+  onPickRandomStory: (sentenceId: number) => void;
 }
 
 interface AnswerState {
@@ -20,7 +21,7 @@ interface AnswerState {
   isCorrect: boolean;
 }
 
-export function SentenceTraining({ exercise, onUseSuggestion }: SentenceTrainingProps) {
+export function SentenceTraining({ exercise, onUseSuggestion, onPickRandomStory }: SentenceTrainingProps) {
   const t = useTranslations();
   const playbackSpeedOptions = useMemo(() => [0.5, 0.75, 1, 1.25, 1.5, 2], []);
   const [revealedWords, setRevealedWords] = useState<Record<number, boolean>>({});
@@ -500,7 +501,7 @@ export function SentenceTraining({ exercise, onUseSuggestion }: SentenceTraining
 
       {isPending && <p className={styles.helperText}>{t("sentence.saving")}</p>}
       <div className={styles.topicActions}>
-        <p className={styles.helperText}>{t("sentence.followUpSuggestions")}</p>
+        <p className={styles.helperText}>{t("sentence.suggestions")}</p>
         {exercise.storySuggestions.slice(0, 2).map((suggestion, index) => (
           <button
             className={styles.primaryButton}
@@ -510,6 +511,16 @@ export function SentenceTraining({ exercise, onUseSuggestion }: SentenceTraining
             type="button"
           >
             {suggestion.headline}
+          </button>
+        ))}
+        {exercise.randomStories.slice(0, 2).map((story) => (
+          <button
+            className={styles.primaryButton}
+            key={story.sentenceId}
+            onClick={() => onPickRandomStory(story.sentenceId)}
+            type="button"
+          >
+            {story.title}
           </button>
         ))}
       </div>
