@@ -1,6 +1,7 @@
 import "server-only";
 
 import OpenAI from "openai";
+import { toFile } from "openai/uploads";
 import { sql } from "kysely";
 
 import { ensureLearningTables, getDb } from "@/lib/db";
@@ -60,6 +61,12 @@ export interface StorySuggestion {
 export interface RandomStoryLink {
   sentenceId: number;
   title: string;
+}
+
+export interface SentenceWordTimestamp {
+  word: string;
+  startSeconds: number;
+  endSeconds: number;
 }
 
 const TRANSLATION_MODULE_VERSION = 6;
@@ -1317,6 +1324,158 @@ export async function getOrCreateSentenceAudioDataUrl(input: {
   }
 
   return toAudioDataUrl(audio.audio);
+}
+
+function isValidSentenceWordTimestamp(value: unknown): value is SentenceWordTimestamp {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+
+  const candidate = value as Record<string, unknown>;
+
+  return (
+    typeof candidate.word === "string"
+    && typeof candidate.startSeconds === "number"
+    && Number.isFinite(candidate.startSeconds)
+    && candidate.startSeconds >= 0
+    && typeof candidate.endSeconds === "number"
+    && Number.isFinite(candidate.endSeconds)
+    && candidate.endSeconds >= candidate.startSeconds
+  );
+}
+
+function parseSentenceWordTimestamps(value: string): SentenceWordTimestamp[] | null {
+  try {
+    const parsed = JSON.parse(value) as unknown;
+
+    if (!Array.isArray(parsed)) {
+      return null;
+    }
+
+    const words = parsed.filter(isValidSentenceWordTimestamp);
+
+    if (words.length === 0) {
+      return null;
+    }
+
+    return words;
+  } catch {
+    return null;
+  }
+}
+
+async function transcribeAudioWords(input: {
+  userId: number;
+  sentenceId: number;
+  audio: Buffer;
+}): Promise<SentenceWordTimestamp[] | null> {
+  const access = await resolveOpenAiAccess(input.userId);
+  const client = access?.client;
+
+  if (!client || !access) {
+    return null;
+  }
+
+  const startedAt = Date.now();
+  try {
+    const transcription = await client.audio.transcriptions.create({
+      model: "gpt-4o-transcribe",
+      response_format: "verbose_json",
+      timestamp_granularities: ["word"],
+      file: await toFile(input.audio, `sentence-${input.sentenceId}.mp3`, {
+        type: "audio/mpeg",
+      }),
+    });
+
+    logOpenAiCall({
+      operation: "audio.transcriptions.create:gpt-4o-transcribe",
+      source: `transcript-story-${input.sentenceId}`,
+      userId: input.userId,
+      keySource: access.keySource,
+      durationMs: Date.now() - startedAt,
+      costUsd: 0,
+    });
+
+    const words = (transcription.words ?? [])
+      .map((word) => ({
+        word: word.word.trim(),
+        startSeconds: word.start,
+        endSeconds: word.end,
+      }))
+      .filter((word) =>
+        word.word.length > 0
+        && Number.isFinite(word.startSeconds)
+        && Number.isFinite(word.endSeconds)
+        && word.startSeconds >= 0
+        && word.endSeconds >= word.startSeconds,
+      );
+
+    return words.length > 0 ? words : null;
+  } catch (error) {
+    logOpenAiCall({
+      operation: "audio.transcriptions.create:gpt-4o-transcribe",
+      source: `transcript-story-${input.sentenceId}`,
+      userId: input.userId,
+      keySource: access.keySource,
+      durationMs: Date.now() - startedAt,
+      costUsd: 0,
+    });
+    console.error("Error generating transcription from OpenAI:", error);
+    return null;
+  }
+}
+
+export async function getOrCreateSentenceWordTimestamps(input: {
+  sentenceId: number;
+  userId: number;
+}): Promise<SentenceWordTimestamp[]> {
+  await ensureLearningTables();
+  const db = getDb();
+
+  const existingTranscript = await db
+    .selectFrom("sentence_audio_transcripts")
+    .select("transcript_json")
+    .where("sentence_translation_id", "=", input.sentenceId)
+    .executeTakeFirst();
+
+  if (existingTranscript) {
+    const parsed = parseSentenceWordTimestamps(existingTranscript.transcript_json);
+    if (parsed) {
+      return parsed;
+    }
+  }
+
+  const audio = await getOrCreateSentenceAudio({
+    sentenceId: input.sentenceId,
+    userId: input.userId,
+  });
+
+  if (!audio) {
+    return [];
+  }
+
+  const words = await transcribeAudioWords({
+    userId: input.userId,
+    sentenceId: input.sentenceId,
+    audio: audio.audio,
+  });
+
+  if (!words?.length) {
+    return [];
+  }
+
+  await db
+    .insertInto("sentence_audio_transcripts")
+    .values({
+      sentence_translation_id: input.sentenceId,
+      transcript_json: JSON.stringify(words),
+    })
+    .onConflict((oc) => oc.column("sentence_translation_id").doUpdateSet({
+      transcript_json: JSON.stringify(words),
+    }))
+    .execute();
+
+  return words;
 }
 
 export async function fillMissingSentenceTitlesAtStartup(): Promise<void> {

@@ -434,6 +434,11 @@
   color: var(--danger-text);
 }
 
+.wordCardPlaying {
+  border-color: var(--accent);
+  background: color-mix(in oklab, var(--accent) 20%, transparent);
+}
+
 .wordTranslation {
   display: block;
   min-height: 0.7rem;

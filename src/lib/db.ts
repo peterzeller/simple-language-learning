@@ -67,6 +67,13 @@ interface SentenceAudioTable {
   created_at: Generated<TimestampColumn>;
 }
 
+interface SentenceAudioTranscriptsTable {
+  id: Generated<number>;
+  sentence_translation_id: number;
+  transcript_json: string;
+  created_at: Generated<TimestampColumn>;
+}
+
 interface OpenAiApiKeysTable {
   id: Generated<number>;
   user_id: number | null;
@@ -93,6 +100,7 @@ interface Database {
   sentence_translations: SentenceTranslationsTable;
   sentence_story_suggestions: SentenceStorySuggestionsTable;
   sentence_audio: SentenceAudioTable;
+  sentence_audio_transcripts: SentenceAudioTranscriptsTable;
   openai_api_keys: OpenAiApiKeysTable;
   openai_api_call_costs: OpenAiApiCallCostsTable;
 }
@@ -398,6 +406,22 @@ export async function ensureLearningTables(): Promise<void> {
         column.notNull().defaultTo(sql`CURRENT_TIMESTAMP`),
       )
       .addUniqueConstraint("sentence_audio_sentence_translation_id_key", ["sentence_translation_id"])
+      .execute();
+
+    await db.schema
+      .createTable("sentence_audio_transcripts")
+      .ifNotExists()
+      .addColumn("id", "integer", (column) =>
+        column.generatedAlwaysAsIdentity().primaryKey(),
+      )
+      .addColumn("sentence_translation_id", "integer", (column) =>
+        column.references("sentence_translations.id").onDelete("cascade").notNull(),
+      )
+      .addColumn("transcript_json", "text", (column) => column.notNull())
+      .addColumn("created_at", "timestamptz", (column) =>
+        column.notNull().defaultTo(sql`CURRENT_TIMESTAMP`),
+      )
+      .addUniqueConstraint("sentence_audio_transcripts_sentence_translation_id_key", ["sentence_translation_id"])
       .execute();
   })();
 
