@@ -33,7 +33,8 @@ export default async function SentenceTranslationPage({
   }
 
   const params = await searchParams;
-  const topic = normalizeTopic(params.topic) || t("sentence.defaultTopic");
+  const requestedTopic = normalizeTopic(params.topic);
+  const topic = requestedTopic || t("sentence.defaultTopic");
   const sentenceIdParam = normalizeTopic(params.sentenceId);
   const sentenceId = Number(sentenceIdParam);
   const hasRequestedSentenceId = Number.isInteger(sentenceId) && sentenceId > 0;
@@ -59,7 +60,14 @@ export default async function SentenceTranslationPage({
         <h1>{t("sentence.title")}</h1>
         <p>{t("sentence.description")}</p>
 
-        <SentenceTranslationWorkspace initialExercise={exercise} initialTopic={topic} />
+        <SentenceTranslationWorkspace
+          initialExercise={exercise}
+          initialTopicInput={requestedTopic}
+        />
+
+        <Link className={styles.helperLink} href="/sentences">
+          {t("sentence.browseStories")}
+        </Link>
 
         <Link className={styles.helperLink} href="/">
           {t("common.backHome")}

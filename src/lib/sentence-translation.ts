@@ -45,14 +45,29 @@ export interface SentenceQuestion {
 
 export interface SentenceExercise {
   sentenceId: number;
+  storyTitle: string;
+  storySuggestions: StorySuggestion[];
+  randomStories: RandomStoryLink[];
   tokens: SentenceToken[];
   questions: SentenceQuestion[];
+}
+
+export interface StorySuggestion {
+  headline: string;
+  prompt: string;
+}
+
+export interface RandomStoryLink {
+  sentenceId: number;
+  title: string;
 }
 
 const TRANSLATION_MODULE_VERSION = 6;
 
 interface SavedSentenceRow {
   id: number;
+  title: string | null;
+  topic: string;
   learningLanguage: string;
   rawSentence: string;
   sourceText: string;
@@ -73,6 +88,7 @@ function asSupportedLanguage(language: string): SupportedLearningLanguage {
 
 async function saveGeneratedSentence(input: {
   topic: string;
+  title: string | null;
   learningLanguage: string;
   rawSentence: string;
   sourceText: string;
@@ -86,6 +102,7 @@ async function saveGeneratedSentence(input: {
     .insertInto("sentence_translations")
     .values({
       topic: input.topic,
+      title: input.title,
       learning_language: input.learningLanguage,
       raw_sentence: input.rawSentence,
       translation_segments: JSON.stringify({
@@ -107,7 +124,7 @@ async function getRandomSavedSentence(learningLanguage: string): Promise<SavedSe
 
   const row = await db
     .selectFrom("sentence_translations")
-    .select(["id", "learning_language", "raw_sentence", "source_text", "translation_segments"])
+    .select(["id", "title", "topic", "learning_language", "raw_sentence", "source_text", "translation_segments"])
     .where("learning_language", "=", learningLanguage)
     .where("source_text", "is not", null)
     .orderBy(sql`RANDOM()`)
@@ -120,6 +137,8 @@ async function getRandomSavedSentence(learningLanguage: string): Promise<SavedSe
 
   return {
     id: row.id,
+    title: row.title,
+    topic: row.topic,
     learningLanguage: row.learning_language,
     rawSentence: row.raw_sentence,
     sourceText: row.source_text ?? "",
@@ -136,7 +155,7 @@ async function getSavedSentenceById(input: {
 
   const row = await db
     .selectFrom("sentence_translations")
-    .select(["id", "learning_language", "raw_sentence", "source_text", "translation_segments"])
+    .select(["id", "title", "topic", "learning_language", "raw_sentence", "source_text", "translation_segments"])
     .where("id", "=", input.sentenceId)
     .where("learning_language", "=", input.learningLanguage)
     .where("source_text", "is not", null)
@@ -148,11 +167,84 @@ async function getSavedSentenceById(input: {
 
   return {
     id: row.id,
+    title: row.title,
+    topic: row.topic,
     learningLanguage: row.learning_language,
     rawSentence: row.raw_sentence,
     sourceText: row.source_text ?? "",
     translationSegments: row.translation_segments,
   };
+}
+
+async function saveStorySuggestions(input: {
+  sentenceId: number;
+  suggestions: StorySuggestion[];
+}): Promise<void> {
+  if (input.suggestions.length === 0) {
+    return;
+  }
+
+  await ensureLearningTables();
+  const db = getDb();
+  await db
+    .insertInto("sentence_story_suggestions")
+    .values(
+      input.suggestions.map((suggestion) => ({
+        sentence_translation_id: input.sentenceId,
+        headline: suggestion.headline,
+        prompt: suggestion.prompt,
+      })),
+    )
+    .execute();
+}
+
+async function getStorySuggestions(sentenceId: number): Promise<StorySuggestion[]> {
+  await ensureLearningTables();
+  const db = getDb();
+  const rows = await db
+    .selectFrom("sentence_story_suggestions")
+    .select(["headline", "prompt"])
+    .where("sentence_translation_id", "=", sentenceId)
+    .orderBy("id asc")
+    .limit(2)
+    .execute();
+
+  return rows.map((row) => ({ headline: row.headline, prompt: row.prompt }));
+}
+
+async function getRandomStoryLinks(input: {
+  learningLanguage: string;
+  excludeSentenceId: number;
+}): Promise<RandomStoryLink[]> {
+  await ensureLearningTables();
+  const db = getDb();
+  const rows = await db
+    .selectFrom("sentence_translations")
+    .select(["id", "title", "topic"])
+    .where("learning_language", "=", input.learningLanguage)
+    .where("id", "!=", input.excludeSentenceId)
+    .orderBy(sql`RANDOM()`)
+    .limit(2)
+    .execute();
+
+  if (rows.length < 2) {
+    const existingIds = new Set(rows.map((row) => row.id));
+    const needed = 2 - rows.length;
+    const fallbackRows = await db
+      .selectFrom("sentence_translations")
+      .select(["id", "title", "topic"])
+      .where("learning_language", "=", input.learningLanguage)
+      .where("id", "not in", Array.from(existingIds).length ? Array.from(existingIds) : [-1])
+      .orderBy(sql`RANDOM()`)
+      .limit(needed)
+      .execute();
+    rows.push(...fallbackRows);
+  }
+
+  return rows.map((row) => ({
+    sentenceId: row.id,
+    title: row.title?.trim() || row.topic.trim() || `Story ${row.id}`,
+  })).slice(0, 2);
 }
 
 async function requestOpenAiJson<T>(input: {
@@ -303,6 +395,8 @@ async function generateFromOpenAI(input: {
   learningLanguage: string;
   knownLanguage: string;
 }): Promise<{
+  title: string | null;
+  storySuggestions: StorySuggestion[];
   rawSentence: string;
   sourceText: string;
   sourceTextAudioPromise: Promise<Buffer | null>;
@@ -316,7 +410,9 @@ async function generateFromOpenAI(input: {
   }
 
   const learningLanguage = asSupportedLanguage(input.learningLanguage);
+  const knownLanguage = asSupportedLanguage(input.knownLanguage);
   const learningLanguageLabel = LANGUAGE_LABELS[learningLanguage];
+  const knownLanguageLabel = LANGUAGE_LABELS[knownLanguage];
 
   const generationSystemPrompt = [
     `Respond to the user's prompt in ${learningLanguageLabel}.`,
@@ -362,6 +458,58 @@ async function generateFromOpenAI(input: {
       console.warn("OpenAI generation step failed, falling back to default sentence.");
       return null;
     }
+
+    const metadataResponse = await requestOpenAiJson<{
+      title: string;
+      suggestions: Array<{ headline: string; prompt: string }>;
+    }>({
+      client,
+      userId: input.userId,
+      apiKeyId: access.apiKeyId,
+      keySource: access.keySource,
+      source: `story-metadata-${input.storyId}`,
+      systemPrompt: [
+        `Create metadata for a ${learningLanguageLabel} learning story.`,
+        `Return JSON with "title" and exactly 2 "suggestions".`,
+        `Each suggestion must have a short "headline" between 1 and 10 words.`,
+        `Each suggestion must have a longer "prompt" between 5 and 200 words.`,
+        `Write title, headline, and prompt in ${knownLanguageLabel}.`,
+      ].join(" "),
+      userPrompt: sourceText,
+      schemaName: "story_metadata_response",
+      schema: {
+        type: "object",
+        properties: {
+          title: { type: "string" },
+          suggestions: {
+            type: "array",
+            minItems: 2,
+            maxItems: 2,
+            items: {
+              type: "object",
+              properties: {
+                headline: { type: "string" },
+                prompt: { type: "string" },
+              },
+              required: ["headline", "prompt"],
+              additionalProperties: false,
+            },
+          },
+        },
+        required: ["title", "suggestions"],
+        additionalProperties: false,
+      },
+      useWebSearch: false,
+    });
+
+    const title = metadataResponse?.title?.trim();
+    const storySuggestions = (metadataResponse?.suggestions ?? [])
+      .map((suggestion) => ({
+        headline: suggestion.headline.trim(),
+        prompt: suggestion.prompt.trim(),
+      }))
+      .filter((suggestion) => suggestion.headline && suggestion.prompt)
+      .slice(0, 2);
     const sourceTextAudioPromise = generateSpeechFromOpenAI({
       userId: input.userId,
       source: `tts-story-${input.storyId}`,
@@ -385,6 +533,8 @@ async function generateFromOpenAI(input: {
     }
 
     return {
+      title: title || null,
+      storySuggestions,
       rawSentence: translationResponse.rawSentence,
       sourceText,
       sourceTextAudioPromise,
@@ -630,6 +780,25 @@ function fallbackSourceSentence(topic: string, learningLanguage: string): string
   return "¿Cómo estuvo tu fin de semana?";
 }
 
+function fallbackStoryTitle(topic: string): string {
+  const normalizedTopic = topic.trim();
+  return normalizedTopic ? `Story: ${normalizedTopic}` : "Untitled story";
+}
+
+function fallbackStorySuggestions(topic: string): StorySuggestion[] {
+  const normalizedTopic = topic.trim() || "daily life";
+  return [
+    {
+      headline: "A hidden clue",
+      prompt: `Write a follow-up story connected to ${normalizedTopic}. Add one hidden clue in the first half and reveal it at the end.`,
+    },
+    {
+      headline: "Different point of view",
+      prompt: `Retell the next chapter about ${normalizedTopic} from another character's perspective. Include conflict, dialogue, and a meaningful ending.`,
+    },
+  ];
+}
+
 function fallbackSentence(topic: string, learningLanguage: string): string {
   const normalized = topic.trim().toLowerCase();
 
@@ -734,6 +903,7 @@ function getQuestionIndexesByKnowledgeScore(input: {
 
 async function createSentenceExerciseFromRawSentence(input: {
   sentenceId: number;
+  storyTitle: string;
   segments: AlignedBilingualSegment[];
   userId: number;
   learningLanguage: string;
@@ -830,7 +1000,29 @@ async function createSentenceExerciseFromRawSentence(input: {
     };
   });
 
-  return { sentenceId: input.sentenceId, tokens, questions };
+  const [storySuggestions, randomStories] = await Promise.all([
+    getStorySuggestions(input.sentenceId),
+    getRandomStoryLinks({
+      learningLanguage: input.learningLanguage,
+      excludeSentenceId: input.sentenceId,
+    }),
+  ]);
+  const fallbackSuggestions = fallbackStorySuggestions(input.storyTitle);
+  const resolvedSuggestions = storySuggestions.length >= 2
+    ? storySuggestions.slice(0, 2)
+    : [
+      ...storySuggestions,
+      ...fallbackSuggestions.slice(0, 2 - storySuggestions.length),
+    ];
+
+  return {
+    sentenceId: input.sentenceId,
+    storyTitle: input.storyTitle,
+    storySuggestions: resolvedSuggestions,
+    randomStories,
+    tokens,
+    questions,
+  };
 }
 
 async function warmSentenceAudioCache(input: {
@@ -914,9 +1106,13 @@ export async function createSentenceExerciseFromPrompt(input: {
 }): Promise<SentenceExercise> {
   const provisionalStoryId = Date.now();
   const aiSentence = await generateFromOpenAI({ ...input, storyId: provisionalStoryId });
+  const storyTitle = aiSentence?.title?.trim() || fallbackStoryTitle(input.topic);
   const rawSentence = aiSentence?.rawSentence ?? fallbackSentence(input.topic, input.learningLanguage);
   const sourceText = aiSentence?.sourceText ?? fallbackSourceSentence(input.topic, input.learningLanguage);
   const translationSegments = aiSentence?.translationSegments ?? buildFallbackSegments(input.topic, input.learningLanguage);
+  const storySuggestions = aiSentence?.storySuggestions?.length
+    ? aiSentence.storySuggestions
+    : fallbackStorySuggestions(input.topic);
   const sourceTextAudioPromise = aiSentence?.sourceTextAudioPromise ?? generateSpeechFromOpenAI({
     userId: input.userId,
     source: `tts-story-${provisionalStoryId}`,
@@ -924,15 +1120,21 @@ export async function createSentenceExerciseFromPrompt(input: {
   });
   const sentenceId = await saveGeneratedSentence({
     topic: input.topic,
+    title: storyTitle,
     learningLanguage: input.learningLanguage,
     rawSentence,
     sourceText,
     translationSegments,
     translationVersion: TRANSLATION_MODULE_VERSION,
   });
+  await saveStorySuggestions({
+    sentenceId,
+    suggestions: storySuggestions.slice(0, 2),
+  });
 
   const exercise = await createSentenceExerciseFromRawSentence({
     sentenceId,
+    storyTitle,
     segments: translationSegments,
     userId: input.userId,
     learningLanguage: input.learningLanguage,
@@ -973,6 +1175,7 @@ export async function createSentenceExerciseFromRandomSentence(input: {
 
   const exercise = await createSentenceExerciseFromRawSentence({
     sentenceId: savedSentence.id,
+    storyTitle: savedSentence.title?.trim() || savedSentence.topic.trim() || `Story ${savedSentence.id}`,
     segments: translationSegments,
     userId: input.userId,
     learningLanguage: input.learningLanguage,
@@ -1012,6 +1215,7 @@ export async function createSentenceExerciseFromSentenceId(input: {
 
   const exercise = await createSentenceExerciseFromRawSentence({
     sentenceId: savedSentence.id,
+    storyTitle: savedSentence.title?.trim() || savedSentence.topic.trim() || `Story ${savedSentence.id}`,
     segments: translationSegments,
     userId: input.userId,
     learningLanguage: input.learningLanguage,
@@ -1113,4 +1317,63 @@ export async function getOrCreateSentenceAudioDataUrl(input: {
   }
 
   return toAudioDataUrl(audio.audio);
+}
+
+export async function fillMissingSentenceTitlesAtStartup(): Promise<void> {
+  await ensureLearningTables();
+  const db = getDb();
+  const user = await db.selectFrom("users").select("id").orderBy("id asc").limit(1).executeTakeFirst();
+
+  if (!user) {
+    return;
+  }
+
+  const access = await resolveOpenAiAccess(user.id);
+  if (!access) {
+    return;
+  }
+
+  const untitledRows = await db
+    .selectFrom("sentence_translations")
+    .select(["id", "topic", "source_text"])
+    .where((eb) => eb.or([
+      eb("title", "is", null),
+      eb("title", "=", ""),
+    ]))
+    .where("source_text", "is not", null)
+    .orderBy("id asc")
+    .limit(20)
+    .execute();
+
+  for (const row of untitledRows) {
+    const sourceText = row.source_text?.trim();
+    if (!sourceText) {
+      continue;
+    }
+
+    const response = await requestOpenAiJson<{ title: string }>({
+      client: access.client,
+      userId: user.id,
+      apiKeyId: access.apiKeyId,
+      keySource: access.keySource,
+      source: `backfill-title-${row.id}`,
+      systemPrompt: "Create one short title for the provided story text. Output JSON with key \"title\".",
+      userPrompt: sourceText,
+      schemaName: "story_title_response",
+      schema: {
+        type: "object",
+        properties: { title: { type: "string" } },
+        required: ["title"],
+        additionalProperties: false,
+      },
+      useWebSearch: false,
+    });
+
+    const title = response?.title?.trim() || fallbackStoryTitle(row.topic);
+    await db
+      .updateTable("sentence_translations")
+      .set({ title })
+      .where("id", "=", row.id)
+      .executeTakeFirst();
+  }
 }

@@ -4,6 +4,8 @@ export async function register() {
   }
 
   const { initializeDatabase } = await import("./lib/db");
+  const { fillMissingSentenceTitlesAtStartup } = await import("./lib/sentence-translation");
 
   await initializeDatabase();
+  await fillMissingSentenceTitlesAtStartup();
 }
