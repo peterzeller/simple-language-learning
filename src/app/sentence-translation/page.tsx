@@ -61,6 +61,10 @@ export default async function SentenceTranslationPage({
 
         <SentenceTranslationWorkspace initialExercise={exercise} initialTopic={topic} />
 
+        <Link className={styles.helperLink} href="/sentences">
+          {t("sentence.browseStories")}
+        </Link>
+
         <Link className={styles.helperLink} href="/">
           {t("common.backHome")}
         </Link>

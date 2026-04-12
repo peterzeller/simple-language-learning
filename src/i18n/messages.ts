@@ -86,6 +86,7 @@ export const messages = {
     sentence: {
       title: "Practice sentence translation",
       description: "Pick a topic and start practicing with sentence-level translation prompts.",
+      browseStories: "Browse saved stories →",
       defaultTopic: "Random story",
       topic: "Topic",
       enterTopic: "Enter a topic",
@@ -102,6 +103,17 @@ export const messages = {
       selectTranslationFor: "Select the translation for",
       closeDialog: "Close translation dialog",
       saving: "Saving your progress…",
+    },
+    sentences: {
+      title: "Saved stories",
+      description: "Open any saved story and continue learning from it.",
+      storyTitle: "Title",
+      createdAt: "Created",
+      previous: "← Previous",
+      next: "Next →",
+      pageLabel: "Page {page} of {totalPages}",
+      none: "No stories saved yet.",
+      backToExercise: "← Back to sentence exercise",
     },
   },
   de: {
@@ -185,6 +197,7 @@ export const messages = {
     sentence: {
       title: "Satzübersetzung üben",
       description: "Wähle ein Thema und übe mit Übersetzungsaufgaben auf Satzebene.",
+      browseStories: "Gespeicherte Geschichten ansehen →",
       defaultTopic: "Zufällige Geschichte",
       topic: "Thema",
       enterTopic: "Thema eingeben",
@@ -201,6 +214,17 @@ export const messages = {
       selectTranslationFor: "Wähle die Übersetzung für",
       closeDialog: "Übersetzungsdialog schließen",
       saving: "Dein Fortschritt wird gespeichert…",
+    },
+    sentences: {
+      title: "Gespeicherte Geschichten",
+      description: "Öffne eine gespeicherte Geschichte und lerne weiter.",
+      storyTitle: "Titel",
+      createdAt: "Erstellt",
+      previous: "← Zurück",
+      next: "Weiter →",
+      pageLabel: "Seite {page} von {totalPages}",
+      none: "Noch keine Geschichten gespeichert.",
+      backToExercise: "← Zur Satzübung",
     },
   },
 } as const;
