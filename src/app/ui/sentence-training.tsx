@@ -13,7 +13,6 @@ import styles from "@/app/auth.module.css";
 interface SentenceTrainingProps {
   exercise: SentenceExercise;
   onUseSuggestion: (prompt: string) => void;
-  onPickRandomStory: (sentenceId: number) => void;
 }
 
 interface AnswerState {
@@ -21,7 +20,7 @@ interface AnswerState {
   isCorrect: boolean;
 }
 
-export function SentenceTraining({ exercise, onUseSuggestion, onPickRandomStory }: SentenceTrainingProps) {
+export function SentenceTraining({ exercise, onUseSuggestion }: SentenceTrainingProps) {
   const t = useTranslations();
   const playbackSpeedOptions = useMemo(() => [0.5, 0.75, 1, 1.25, 1.5, 2], []);
   const [revealedWords, setRevealedWords] = useState<Record<number, boolean>>({});
@@ -507,20 +506,10 @@ export function SentenceTraining({ exercise, onUseSuggestion, onPickRandomStory 
             className={styles.primaryButton}
             key={`${suggestion.headline}-${index}`}
             onClick={() => onUseSuggestion(suggestion.prompt)}
+            title={suggestion.prompt}
             type="button"
           >
             {suggestion.headline}
-          </button>
-        ))}
-        <p className={styles.helperText}>{t("sentence.randomStorySuggestions")}</p>
-        {exercise.randomStories.slice(0, 2).map((story) => (
-          <button
-            className={styles.secondaryButton}
-            key={story.sentenceId}
-            onClick={() => onPickRandomStory(story.sentenceId)}
-            type="button"
-          >
-            {story.title}
           </button>
         ))}
       </div>
