@@ -504,7 +504,8 @@ export function SentenceTraining({ exercise, onUseSuggestion, onPickRandomStory 
       {isPending && <p className={styles.helperText}>{t("sentence.saving")}</p>}
       {isExerciseComplete && (
         <div className={styles.topicActions}>
-          {exercise.storySuggestions.map((suggestion, index) => (
+          <p className={styles.helperText}>{t("sentence.followUpSuggestions")}</p>
+          {exercise.storySuggestions.slice(0, 2).map((suggestion, index) => (
             <button
               className={styles.primaryButton}
               key={`${suggestion.headline}-${index}`}
@@ -514,7 +515,8 @@ export function SentenceTraining({ exercise, onUseSuggestion, onPickRandomStory 
               {suggestion.headline}
             </button>
           ))}
-          {exercise.randomStories.map((story) => (
+          <p className={styles.helperText}>{t("sentence.randomStorySuggestions")}</p>
+          {exercise.randomStories.slice(0, 2).map((story) => (
             <button
               className={styles.secondaryButton}
               key={story.sentenceId}

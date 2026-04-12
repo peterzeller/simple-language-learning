@@ -227,10 +227,24 @@ async function getRandomStoryLinks(input: {
     .limit(2)
     .execute();
 
+  if (rows.length < 2) {
+    const existingIds = new Set(rows.map((row) => row.id));
+    const needed = 2 - rows.length;
+    const fallbackRows = await db
+      .selectFrom("sentence_translations")
+      .select(["id", "title", "topic"])
+      .where("learning_language", "=", input.learningLanguage)
+      .where("id", "not in", Array.from(existingIds).length ? Array.from(existingIds) : [-1])
+      .orderBy(sql`RANDOM()`)
+      .limit(needed)
+      .execute();
+    rows.push(...fallbackRows);
+  }
+
   return rows.map((row) => ({
     sentenceId: row.id,
     title: row.title?.trim() || row.topic.trim() || `Story ${row.id}`,
-  }));
+  })).slice(0, 2);
 }
 
 async function requestOpenAiJson<T>(input: {
@@ -993,9 +1007,13 @@ async function createSentenceExerciseFromRawSentence(input: {
       excludeSentenceId: input.sentenceId,
     }),
   ]);
-  const resolvedSuggestions = storySuggestions.length
-    ? storySuggestions
-    : fallbackStorySuggestions(input.storyTitle).slice(0, 2);
+  const fallbackSuggestions = fallbackStorySuggestions(input.storyTitle);
+  const resolvedSuggestions = storySuggestions.length >= 2
+    ? storySuggestions.slice(0, 2)
+    : [
+      ...storySuggestions,
+      ...fallbackSuggestions.slice(0, 2 - storySuggestions.length),
+    ];
 
   return {
     sentenceId: input.sentenceId,

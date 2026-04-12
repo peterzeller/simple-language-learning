@@ -103,6 +103,8 @@ export const messages = {
       selectTranslationFor: "Select the translation for",
       closeDialog: "Close translation dialog",
       saving: "Saving your progress…",
+      followUpSuggestions: "AI follow-up story suggestions",
+      randomStorySuggestions: "Random existing stories",
     },
     sentences: {
       title: "Saved stories",
@@ -214,6 +216,8 @@ export const messages = {
       selectTranslationFor: "Wähle die Übersetzung für",
       closeDialog: "Übersetzungsdialog schließen",
       saving: "Dein Fortschritt wird gespeichert…",
+      followUpSuggestions: "KI-Vorschläge für Folgegeschichten",
+      randomStorySuggestions: "Zufällige vorhandene Geschichten",
     },
     sentences: {
       title: "Gespeicherte Geschichten",
