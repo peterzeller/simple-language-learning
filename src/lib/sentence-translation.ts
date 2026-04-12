@@ -299,6 +299,7 @@ async function translateSourceTextToBilingual(input: {
 async function generateFromOpenAI(input: {
   topic: string;
   userId: number;
+  storyId: number;
   learningLanguage: string;
   knownLanguage: string;
 }): Promise<{
@@ -339,7 +340,7 @@ async function generateFromOpenAI(input: {
       userId: input.userId,
       apiKeyId: access.apiKeyId,
       keySource: access.keySource,
-      source: "generate-story-17",
+      source: `generate-story-${input.storyId}`,
       systemPrompt: generationSystemPrompt,
       userPrompt: input.topic,
       schemaName: "source_text_response",
@@ -363,7 +364,7 @@ async function generateFromOpenAI(input: {
     }
     const sourceTextAudioPromise = generateSpeechFromOpenAI({
       userId: input.userId,
-      source: "tts-story-17",
+      source: `tts-story-${input.storyId}`,
       sourceText,
     });
 
@@ -372,7 +373,7 @@ async function generateFromOpenAI(input: {
       userId: input.userId,
       apiKeyId: access.apiKeyId,
       keySource: access.keySource,
-      source: "translate-story-17",
+      source: `translate-story-${input.storyId}`,
       sourceText,
       learningLanguage: input.learningLanguage,
       knownLanguage: input.knownLanguage,
@@ -852,6 +853,7 @@ async function warmSentenceAudioCache(input: {
 
 async function refreshSentenceSegmentsIfNeeded(input: {
   userId: number;
+  storyId: number;
   sentence: SavedSentenceRow;
   knownLanguage: string;
 }): Promise<AlignedBilingualSegment[] | null> {
@@ -876,7 +878,7 @@ async function refreshSentenceSegmentsIfNeeded(input: {
     userId: input.userId,
     apiKeyId: access.apiKeyId,
     keySource: access.keySource,
-    source: "translate-story-17",
+    source: `translate-story-${input.storyId}`,
     sourceText,
     learningLanguage: input.sentence.learningLanguage,
     knownLanguage: input.knownLanguage,
@@ -910,13 +912,14 @@ export async function createSentenceExerciseFromPrompt(input: {
   learningLanguage: string;
   knownLanguage: string;
 }): Promise<SentenceExercise> {
-  const aiSentence = await generateFromOpenAI(input);
+  const provisionalStoryId = Date.now();
+  const aiSentence = await generateFromOpenAI({ ...input, storyId: provisionalStoryId });
   const rawSentence = aiSentence?.rawSentence ?? fallbackSentence(input.topic, input.learningLanguage);
   const sourceText = aiSentence?.sourceText ?? fallbackSourceSentence(input.topic, input.learningLanguage);
   const translationSegments = aiSentence?.translationSegments ?? buildFallbackSegments(input.topic, input.learningLanguage);
   const sourceTextAudioPromise = aiSentence?.sourceTextAudioPromise ?? generateSpeechFromOpenAI({
     userId: input.userId,
-    source: "tts-story-17",
+    source: `tts-story-${provisionalStoryId}`,
     sourceText,
   });
   const sentenceId = await saveGeneratedSentence({
@@ -960,6 +963,7 @@ export async function createSentenceExerciseFromRandomSentence(input: {
 
   const translationSegments = await refreshSentenceSegmentsIfNeeded({
     userId: input.userId,
+    storyId: savedSentence.id,
     sentence: savedSentence,
     knownLanguage: input.knownLanguage,
   });
@@ -998,6 +1002,7 @@ export async function createSentenceExerciseFromSentenceId(input: {
 
   const translationSegments = await refreshSentenceSegmentsIfNeeded({
     userId: input.userId,
+    storyId: savedSentence.id,
     sentence: savedSentence,
     knownLanguage: input.knownLanguage,
   });
@@ -1060,7 +1065,11 @@ export async function getOrCreateSentenceAudio(input: {
 
   const ttsAudio = input.preGeneratedAudio
     ? await input.preGeneratedAudio
-    : await generateSpeechFromOpenAI({ userId: input.userId, source: "tts-story-17", sourceText });
+    : await generateSpeechFromOpenAI({
+      userId: input.userId,
+      source: `tts-story-${input.sentenceId}`,
+      sourceText,
+    });
 
   if (!ttsAudio) {
     return null;
