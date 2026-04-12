@@ -12,6 +12,8 @@ import styles from "@/app/auth.module.css";
 
 interface SentenceTrainingProps {
   exercise: SentenceExercise;
+  onUseSuggestion: (prompt: string) => void;
+  onPickRandomStory: (sentenceId: number) => void;
 }
 
 interface AnswerState {
@@ -19,7 +21,7 @@ interface AnswerState {
   isCorrect: boolean;
 }
 
-export function SentenceTraining({ exercise }: SentenceTrainingProps) {
+export function SentenceTraining({ exercise, onUseSuggestion, onPickRandomStory }: SentenceTrainingProps) {
   const t = useTranslations();
   const playbackSpeedOptions = useMemo(() => [0.5, 0.75, 1, 1.25, 1.5, 2], []);
   const [revealedWords, setRevealedWords] = useState<Record<number, boolean>>({});
@@ -207,6 +209,8 @@ export function SentenceTraining({ exercise }: SentenceTrainingProps) {
   const activeTokenCandidate =
     activeQuestionIndex !== null ? exercise.tokens[activeQuestionIndex] : undefined;
   const activeToken = activeTokenCandidate?.kind === "word" ? activeTokenCandidate : undefined;
+  const answeredQuestionsCount = Object.keys(answers).length;
+  const isExerciseComplete = exercise.questions.length > 0 && answeredQuestionsCount >= exercise.questions.length;
 
   const seekFromTrackClick = async (event: React.MouseEvent<HTMLButtonElement>) => {
     if (suppressNextTrackClickRef.current) {
@@ -298,6 +302,7 @@ export function SentenceTraining({ exercise }: SentenceTrainingProps) {
 
   return (
     <div className={styles.trainingLayout}>
+      <h2>{exercise.storyTitle}</h2>
       {audioError && <p className={styles.helperText}>{audioError}</p>}
 
       <div className={styles.sentencePlaybackLayout}>
@@ -497,6 +502,30 @@ export function SentenceTraining({ exercise }: SentenceTrainingProps) {
       )}
 
       {isPending && <p className={styles.helperText}>{t("sentence.saving")}</p>}
+      {isExerciseComplete && (
+        <div className={styles.topicActions}>
+          {exercise.storySuggestions.map((suggestion, index) => (
+            <button
+              className={styles.primaryButton}
+              key={`${suggestion.headline}-${index}`}
+              onClick={() => onUseSuggestion(suggestion.prompt)}
+              type="button"
+            >
+              {suggestion.headline}
+            </button>
+          ))}
+          {exercise.randomStories.map((story) => (
+            <button
+              className={styles.secondaryButton}
+              key={story.sentenceId}
+              onClick={() => onPickRandomStory(story.sentenceId)}
+              type="button"
+            >
+              {story.title}
+            </button>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

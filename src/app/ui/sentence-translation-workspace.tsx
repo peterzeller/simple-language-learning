@@ -8,6 +8,7 @@ import styles from "@/app/auth.module.css";
 import {
   createSentenceFromPrompt,
   createSentenceFromRandom,
+  createSentenceFromSentenceId,
 } from "@/app/sentence-translation/actions";
 import { SentenceTraining } from "@/app/ui/sentence-training";
 import type { SentenceExercise } from "@/lib/sentence-translation";
@@ -49,8 +50,38 @@ export function SentenceTranslationWorkspace({ initialExercise, initialTopic }: 
     });
   };
 
+  const fetchExerciseFromTopic = (nextTopic: string) => {
+    startTransition(async () => {
+      const normalizedTopic = nextTopic.trim() || t("sentence.defaultTopic");
+      setTopic(normalizedTopic);
+      const nextExercise = await createSentenceFromPrompt({ topic: normalizedTopic });
+      setExercise(nextExercise);
+    });
+  };
+
+  const fetchExerciseBySentenceId = (sentenceId: number) => {
+    startTransition(async () => {
+      const normalizedTopic = topic.trim() || t("sentence.defaultTopic");
+      const nextExercise = await createSentenceFromSentenceId({
+        topic: normalizedTopic,
+        sentenceId,
+      });
+      setExercise(nextExercise);
+    });
+  };
+
   return (
     <>
+      {isPending && <p className={styles.helperText}>{t("sentence.loading")}</p>}
+      <SentenceTraining
+        exercise={exercise}
+        key={exercise.sentenceId}
+        onPickRandomStory={fetchExerciseBySentenceId}
+        onUseSuggestion={(suggestionPrompt) => {
+          fetchExerciseFromTopic(suggestionPrompt);
+        }}
+      />
+
       <div className={styles.topicForm}>
         <label className={styles.field} htmlFor="topic">
           {t("sentence.topic")}
@@ -75,9 +106,6 @@ export function SentenceTranslationWorkspace({ initialExercise, initialTopic }: 
           </button>
         </div>
       </div>
-
-      {isPending && <p className={styles.helperText}>{t("sentence.loading")}</p>}
-      <SentenceTraining exercise={exercise} key={exercise.sentenceId} />
     </>
   );
 }

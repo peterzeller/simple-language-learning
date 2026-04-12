@@ -43,11 +43,20 @@ interface UserLearningTable {
 interface SentenceTranslationsTable {
   id: Generated<number>;
   topic: string;
+  title: string | null;
   learning_language: string;
   raw_sentence: string;
   translation_segments: string;
   translation_version: number;
   source_text: string | null;
+  created_at: Generated<TimestampColumn>;
+}
+
+interface SentenceStorySuggestionsTable {
+  id: Generated<number>;
+  sentence_translation_id: number;
+  headline: string;
+  prompt: string;
   created_at: Generated<TimestampColumn>;
 }
 
@@ -82,6 +91,7 @@ interface Database {
   word_links: WordLinksTable;
   user_learning: UserLearningTable;
   sentence_translations: SentenceTranslationsTable;
+  sentence_story_suggestions: SentenceStorySuggestionsTable;
   sentence_audio: SentenceAudioTable;
   openai_api_keys: OpenAiApiKeysTable;
   openai_api_call_costs: OpenAiApiCallCostsTable;
@@ -294,6 +304,7 @@ export async function ensureLearningTables(): Promise<void> {
         column.generatedAlwaysAsIdentity().primaryKey(),
       )
       .addColumn("topic", "text", (column) => column.notNull())
+      .addColumn("title", "text")
       .addColumn("learning_language", "varchar(12)", (column) => column.notNull().defaultTo("es"))
       .addColumn("raw_sentence", "text", (column) => column.notNull())
       .addColumn("translation_segments", "text", (column) => column.notNull().defaultTo("[]"))
@@ -303,6 +314,11 @@ export async function ensureLearningTables(): Promise<void> {
         column.notNull().defaultTo(sql`CURRENT_TIMESTAMP`),
       )
       .execute();
+
+    await sql`
+      ALTER TABLE sentence_translations
+      ADD COLUMN IF NOT EXISTS title text
+    `.execute(db);
 
     await sql`
       ALTER TABLE sentence_translations
@@ -351,6 +367,22 @@ export async function ensureLearningTables(): Promise<void> {
       WHERE translation_segments = '[]'
          OR translation_version IS NULL
     `.execute(db);
+
+    await db.schema
+      .createTable("sentence_story_suggestions")
+      .ifNotExists()
+      .addColumn("id", "integer", (column) =>
+        column.generatedAlwaysAsIdentity().primaryKey(),
+      )
+      .addColumn("sentence_translation_id", "integer", (column) =>
+        column.references("sentence_translations.id").onDelete("cascade").notNull(),
+      )
+      .addColumn("headline", "text", (column) => column.notNull())
+      .addColumn("prompt", "text", (column) => column.notNull())
+      .addColumn("created_at", "timestamptz", (column) =>
+        column.notNull().defaultTo(sql`CURRENT_TIMESTAMP`),
+      )
+      .execute();
 
     await db.schema
       .createTable("sentence_audio")

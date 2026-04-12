@@ -6,6 +6,7 @@ import {
   type SentenceExercise,
   createSentenceExerciseFromPrompt,
   createSentenceExerciseFromRandomSentence,
+  createSentenceExerciseFromSentenceId,
 } from "@/lib/sentence-translation";
 
 function normalizeTopic(value: string): string {
@@ -39,6 +40,25 @@ export async function createSentenceFromRandom(input: {
   }
 
   return createSentenceExerciseFromRandomSentence({
+    topic: normalizeTopic(input.topic),
+    userId: user.id,
+    learningLanguage: user.learningLanguage,
+    knownLanguage: user.knownLanguage,
+  });
+}
+
+export async function createSentenceFromSentenceId(input: {
+  topic: string;
+  sentenceId: number;
+}): Promise<SentenceExercise> {
+  const user = await getCurrentUser();
+
+  if (!user) {
+    throw new Error("Unauthorized");
+  }
+
+  return createSentenceExerciseFromSentenceId({
+    sentenceId: input.sentenceId,
     topic: normalizeTopic(input.topic),
     userId: user.id,
     learningLanguage: user.learningLanguage,
