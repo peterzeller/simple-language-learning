@@ -1377,61 +1377,54 @@ async function transcribeAudioWords(input: {
     return null;
   }
 
-  const timestampModels = ["gpt-4o-transcribe", "whisper-1"] as const;
+  const model = "whisper-1";
+  const startedAt = Date.now();
+  try {
+    const transcription = await client.audio.transcriptions.create({
+      model,
+      response_format: "verbose_json",
+      timestamp_granularities: ["word"],
+      file: await toFile(input.audio, `sentence-${input.sentenceId}.mp3`, {
+        type: "audio/mpeg",
+      }),
+    });
 
-  for (const model of timestampModels) {
-    const startedAt = Date.now();
-    try {
-      const transcription = await client.audio.transcriptions.create({
-        model,
-        response_format: "verbose_json",
-        timestamp_granularities: ["word"],
-        file: await toFile(input.audio, `sentence-${input.sentenceId}.mp3`, {
-          type: "audio/mpeg",
-        }),
-      });
+    logOpenAiCall({
+      operation: `audio.transcriptions.create:${model}`,
+      source: `transcript-story-${input.sentenceId}`,
+      userId: input.userId,
+      keySource: access.keySource,
+      durationMs: Date.now() - startedAt,
+      costUsd: 0,
+    });
 
-      logOpenAiCall({
-        operation: `audio.transcriptions.create:${model}`,
-        source: `transcript-story-${input.sentenceId}`,
-        userId: input.userId,
-        keySource: access.keySource,
-        durationMs: Date.now() - startedAt,
-        costUsd: 0,
-      });
+    const words = (transcription.words ?? [])
+      .map((word) => ({
+        word: word.word.trim(),
+        startSeconds: word.start,
+        endSeconds: word.end,
+      }))
+      .filter((word) =>
+        word.word.length > 0
+        && Number.isFinite(word.startSeconds)
+        && Number.isFinite(word.endSeconds)
+        && word.startSeconds >= 0
+        && word.endSeconds >= word.startSeconds,
+      );
 
-      const words = (transcription.words ?? [])
-        .map((word) => ({
-          word: word.word.trim(),
-          startSeconds: word.start,
-          endSeconds: word.end,
-        }))
-        .filter((word) =>
-          word.word.length > 0
-          && Number.isFinite(word.startSeconds)
-          && Number.isFinite(word.endSeconds)
-          && word.startSeconds >= 0
-          && word.endSeconds >= word.startSeconds,
-        );
-
-      if (words.length > 0) {
-        return words;
-      }
-    } catch (error) {
-      logOpenAiCall({
-        operation: `audio.transcriptions.create:${model}`,
-        source: `transcript-story-${input.sentenceId}`,
-        userId: input.userId,
-        keySource: access.keySource,
-        durationMs: Date.now() - startedAt,
-        costUsd: 0,
-      });
-      console.warn(`Failed transcription attempt with model ${model}.`, { error });
-    }
+    return words.length > 0 ? words : null;
+  } catch (error) {
+    logOpenAiCall({
+      operation: `audio.transcriptions.create:${model}`,
+      source: `transcript-story-${input.sentenceId}`,
+      userId: input.userId,
+      keySource: access.keySource,
+      durationMs: Date.now() - startedAt,
+      costUsd: 0,
+    });
+    console.error("Error generating transcription from OpenAI with whisper-1:", error);
+    return null;
   }
-
-  console.error("Error generating transcription from OpenAI: no compatible model returned word timestamps.");
-  return null;
 }
 
 export async function getOrCreateSentenceWordTimestamps(input: {
