@@ -30,8 +30,8 @@ declare module "openai" {
 
   export interface TranscriptionCreateParams {
     model: string;
-    response_format: "verbose_json";
-    timestamp_granularities: Array<"word" | "segment">;
+    response_format?: "verbose_json" | "json" | "text";
+    timestamp_granularities?: Array<"word" | "segment">;
     file: unknown;
   }
 
