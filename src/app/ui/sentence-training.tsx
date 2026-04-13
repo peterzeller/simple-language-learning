@@ -57,6 +57,10 @@ export function SentenceTraining({ exercise, onUseSuggestion, onPickRandomStory 
   const pausedQuestionIndexesRef = useRef<Set<number>>(new Set());
   const shouldResumeAfterAnswerRef = useRef(false);
   const transcriptSentenceIdRef = useRef<number | null>(null);
+  const answersRef = useRef(answers);
+  const isPlayingRef = useRef(isPlaying);
+  const questionByIndexRef = useRef<Map<number, (typeof exercise.questions)[number]>>(new Map());
+  const tokenTimingByIndexRef = useRef<Map<number, { startSeconds: number; endSeconds: number }>>(new Map());
   const logPlaybackError = useCallback((context: string, error: unknown) => {
     if (error instanceof DOMException) {
       console.warn(`[sentence-training] ${context}`, {
@@ -182,6 +186,28 @@ export function SentenceTraining({ exercise, onUseSuggestion, onPickRandomStory 
   }, [exercise.sentenceId, loadSentenceTranscript]);
 
   useEffect(() => {
+    answersRef.current = answers;
+  }, [answers]);
+
+  useEffect(() => {
+    isPlayingRef.current = isPlaying;
+  }, [isPlaying]);
+
+  useEffect(() => {
+    questionByIndexRef.current = questionByIndex;
+  }, [questionByIndex]);
+
+  useEffect(() => {
+    tokenTimingByIndexRef.current = tokenTimingByIndex;
+  }, [tokenTimingByIndex]);
+
+  useEffect(() => {
+    if (audioRef.current) {
+      audioRef.current.playbackRate = playbackSpeed;
+    }
+  }, [playbackSpeed]);
+
+  useEffect(() => {
     if (!audioRef.current) {
       audioRef.current = new Audio();
     }
@@ -199,17 +225,17 @@ export function SentenceTraining({ exercise, onUseSuggestion, onPickRandomStory 
       const currentTime = audio.currentTime;
       setPlaybackProgress(Math.min(1, currentTime / audio.duration));
 
-      const currentWordIndex = Array.from(tokenTimingByIndex.entries()).find(([, timing]) => (
+      const currentWordIndex = Array.from(tokenTimingByIndexRef.current.entries()).find(([, timing]) => (
         currentTime >= timing.startSeconds && currentTime < timing.endSeconds
       ))?.[0] ?? null;
       setActivePlaybackWordIndex(currentWordIndex);
 
-      if (!isPlaying || currentWordIndex === null) {
+      if (!isPlayingRef.current || currentWordIndex === null) {
         return;
       }
 
-      const isQuestionWord = questionByIndex.has(currentWordIndex);
-      const hasAnswer = Boolean(answers[currentWordIndex]);
+      const isQuestionWord = questionByIndexRef.current.has(currentWordIndex);
+      const hasAnswer = Boolean(answersRef.current[currentWordIndex]);
 
       if (!isQuestionWord || hasAnswer || pausedQuestionIndexesRef.current.has(currentWordIndex)) {
         return;
@@ -298,7 +324,7 @@ export function SentenceTraining({ exercise, onUseSuggestion, onPickRandomStory 
       audio.removeEventListener("play", handlePlay);
       audio.removeEventListener("canplay", handleCanPlay);
     };
-  }, [answers, audioBlockedMessage, exercise.sentenceId, isPlaying, logPlaybackError, playbackSpeed, questionByIndex, tokenTimingByIndex]);
+  }, [audioBlockedMessage, exercise.sentenceId, logPlaybackError, playbackSpeed]);
 
   const openSpeedDialog = () => {
     setIsSpeedDialogOpen(true);
