@@ -17,6 +17,7 @@ import {
 } from "@/lib/parse-bilingual-sentence";
 import {
   estimateResponsesApiCostUsd,
+  OpenAiBudgetExceededError,
   recordOpenAiCallCost,
   resolveOpenAiAccess,
 } from "@/lib/openai-usage";
@@ -1487,7 +1488,22 @@ export async function fillMissingSentenceTitlesAtStartup(): Promise<void> {
     return;
   }
 
-  const access = await resolveOpenAiAccess(user.id);
+  let access: Awaited<ReturnType<typeof resolveOpenAiAccess>>;
+
+  try {
+    access = await resolveOpenAiAccess(user.id);
+  } catch (error) {
+    if (error instanceof OpenAiBudgetExceededError) {
+      console.warn("[startup] Skipping title backfill because user budget is exhausted.", {
+        taskName: "fill-missing-sentence-titles",
+        userId: error.userId,
+      });
+      return;
+    }
+
+    throw error;
+  }
+
   if (!access) {
     return;
   }
