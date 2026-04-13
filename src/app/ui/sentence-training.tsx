@@ -21,6 +21,16 @@ interface AnswerState {
   isCorrect: boolean;
 }
 
+interface SentenceWordTimestamp {
+  word: string;
+  startSeconds: number;
+  endSeconds: number;
+}
+
+interface SentenceAudioTranscriptResponse {
+  words?: SentenceWordTimestamp[];
+}
+
 export function SentenceTraining({ exercise, onUseSuggestion, onPickRandomStory }: SentenceTrainingProps) {
   const t = useTranslations();
   const playbackSpeedOptions = useMemo(() => [0.5, 0.75, 1, 1.25, 1.5, 2], []);
@@ -34,6 +44,8 @@ export function SentenceTraining({ exercise, onUseSuggestion, onPickRandomStory 
   const [isPlaying, setIsPlaying] = useState(false);
   const [playbackProgress, setPlaybackProgress] = useState(0);
   const [audioError, setAudioError] = useState<string | null>(null);
+  const [wordTimestamps, setWordTimestamps] = useState<SentenceWordTimestamp[]>([]);
+  const [activePlaybackWordIndex, setActivePlaybackWordIndex] = useState<number | null>(null);
   const audioBlockedMessage = t("sentence.audioBlocked");
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const loadedSentenceIdRef = useRef<number | null>(null);
@@ -42,6 +54,13 @@ export function SentenceTraining({ exercise, onUseSuggestion, onPickRandomStory 
   const restartTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const speedDialogLongPressTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const suppressNextTrackClickRef = useRef(false);
+  const pausedQuestionIndexesRef = useRef<Set<number>>(new Set());
+  const shouldResumeAfterAnswerRef = useRef(false);
+  const transcriptSentenceIdRef = useRef<number | null>(null);
+  const answersRef = useRef(answers);
+  const isPlayingRef = useRef(isPlaying);
+  const questionByIndexRef = useRef<Map<number, (typeof exercise.questions)[number]>>(new Map());
+  const tokenTimingByIndexRef = useRef<Map<number, { startSeconds: number; endSeconds: number }>>(new Map());
   const logPlaybackError = useCallback((context: string, error: unknown) => {
     if (error instanceof DOMException) {
       console.warn(`[sentence-training] ${context}`, {
@@ -58,6 +77,83 @@ export function SentenceTraining({ exercise, onUseSuggestion, onPickRandomStory 
     });
   }, [exercise.sentenceId]);
 
+  const normalizeForAlignment = useCallback((value: string) => (
+    value
+      .normalize("NFKD")
+      .toLowerCase()
+      .replaceAll(/[^\p{L}\p{N}]+/gu, "")
+  ), []);
+
+  const tokenTimingByIndex = useMemo(() => {
+    if (wordTimestamps.length === 0) {
+      return new Map<number, { startSeconds: number; endSeconds: number }>();
+    }
+
+    const wordTokenIndexes = exercise.tokens
+      .map((token, index) => (token.kind === "word" ? index : -1))
+      .filter((index) => index >= 0);
+    const timings = new Map<number, { startSeconds: number; endSeconds: number }>();
+    let transcriptCursor = 0;
+
+    for (const tokenIndex of wordTokenIndexes) {
+      const token = exercise.tokens[tokenIndex];
+      if (token?.kind !== "word") {
+        continue;
+      }
+
+      const normalizedToken = normalizeForAlignment(token.source);
+
+      if (!normalizedToken) {
+        continue;
+      }
+
+      while (transcriptCursor < wordTimestamps.length) {
+        const transcriptWord = wordTimestamps[transcriptCursor];
+        transcriptCursor += 1;
+        if (normalizeForAlignment(transcriptWord.word) !== normalizedToken) {
+          continue;
+        }
+
+        timings.set(tokenIndex, {
+          startSeconds: transcriptWord.startSeconds,
+          endSeconds: transcriptWord.endSeconds,
+        });
+        break;
+      }
+    }
+
+    return timings;
+  }, [exercise.tokens, normalizeForAlignment, wordTimestamps]);
+
+  const questionByIndex = useMemo(
+    () => new Map(exercise.questions.map((question) => [question.tokenIndex, question])),
+    [exercise.questions],
+  );
+
+  const loadSentenceTranscript = useCallback(async () => {
+    if (transcriptSentenceIdRef.current === exercise.sentenceId) {
+      return;
+    }
+
+    try {
+      const response = await fetch(`/api/sentence-audio/${exercise.sentenceId}/transcript`, {
+        method: "GET",
+        cache: "no-store",
+      });
+
+      if (!response.ok) {
+        return;
+      }
+
+      const payload = await response.json() as SentenceAudioTranscriptResponse;
+      const words = Array.isArray(payload.words) ? payload.words : [];
+      setWordTimestamps(words);
+      transcriptSentenceIdRef.current = exercise.sentenceId;
+    } catch (error) {
+      logPlaybackError("Loading transcript failed", error);
+    }
+  }, [exercise.sentenceId, logPlaybackError]);
+
   const loadSentenceAudio = useCallback(() => {
     if (!audioRef.current || loadedSentenceIdRef.current === exercise.sentenceId) {
       return Boolean(audioRef.current?.src);
@@ -69,6 +165,13 @@ export function SentenceTraining({ exercise, onUseSuggestion, onPickRandomStory 
 
     setIsAudioPending(true);
     loadingSentenceIdRef.current = exercise.sentenceId;
+    pausedQuestionIndexesRef.current = new Set();
+    shouldResumeAfterAnswerRef.current = false;
+    setActivePlaybackWordIndex(null);
+    setAudioError(null);
+    setPlaybackProgress(0);
+    setWordTimestamps([]);
+    transcriptSentenceIdRef.current = null;
     const audioSource = `/api/sentence-audio/${exercise.sentenceId}`;
 
     const resolvedSource = new URL(audioSource, window.location.origin).toString();
@@ -78,9 +181,31 @@ export function SentenceTraining({ exercise, onUseSuggestion, onPickRandomStory 
     loadedSentenceIdRef.current = exercise.sentenceId;
     loadingSentenceIdRef.current = null;
     setIsAudioPending(false);
-    setPlaybackProgress(0);
+    void loadSentenceTranscript();
     return true;
-  }, [exercise.sentenceId]);
+  }, [exercise.sentenceId, loadSentenceTranscript]);
+
+  useEffect(() => {
+    answersRef.current = answers;
+  }, [answers]);
+
+  useEffect(() => {
+    isPlayingRef.current = isPlaying;
+  }, [isPlaying]);
+
+  useEffect(() => {
+    questionByIndexRef.current = questionByIndex;
+  }, [questionByIndex]);
+
+  useEffect(() => {
+    tokenTimingByIndexRef.current = tokenTimingByIndex;
+  }, [tokenTimingByIndex]);
+
+  useEffect(() => {
+    if (audioRef.current) {
+      audioRef.current.playbackRate = playbackSpeed;
+    }
+  }, [playbackSpeed]);
 
   useEffect(() => {
     if (!audioRef.current) {
@@ -93,15 +218,50 @@ export function SentenceTraining({ exercise, onUseSuggestion, onPickRandomStory 
     const syncPlaybackProgress = () => {
       if (!Number.isFinite(audio.duration) || audio.duration <= 0) {
         setPlaybackProgress(0);
+        setActivePlaybackWordIndex(null);
         return;
       }
 
-      setPlaybackProgress(Math.min(1, audio.currentTime / audio.duration));
+      const currentTime = audio.currentTime;
+      setPlaybackProgress(Math.min(1, currentTime / audio.duration));
+
+      const currentWordIndex = Array.from(tokenTimingByIndexRef.current.entries()).find(([, timing]) => (
+        currentTime >= timing.startSeconds && currentTime < timing.endSeconds
+      ))?.[0] ?? null;
+      setActivePlaybackWordIndex(currentWordIndex);
+
+      if (!isPlayingRef.current) {
+        return;
+      }
+      const nextQuestionToPause = Array.from(questionByIndexRef.current.keys()).find((tokenIndex) => {
+        if (pausedQuestionIndexesRef.current.has(tokenIndex)) {
+          return false;
+        }
+
+        if (answersRef.current[tokenIndex]) {
+          return false;
+        }
+
+        const timing = tokenTimingByIndexRef.current.get(tokenIndex);
+        if (!timing) {
+          return false;
+        }
+
+        return currentTime >= timing.endSeconds;
+      });
+
+      if (nextQuestionToPause !== undefined) {
+        pausedQuestionIndexesRef.current.add(nextQuestionToPause);
+        shouldResumeAfterAnswerRef.current = true;
+        setActiveQuestionIndex(nextQuestionToPause);
+        audio.pause();
+      }
     };
 
     const handleEnded = () => {
       setIsPlaying(false);
       setPlaybackProgress(1);
+      setActivePlaybackWordIndex(null);
 
       if (restartTimeoutRef.current) {
         clearTimeout(restartTimeoutRef.current);
@@ -126,6 +286,7 @@ export function SentenceTraining({ exercise, onUseSuggestion, onPickRandomStory 
 
     const handlePause = () => {
       setIsPlaying(false);
+      setActivePlaybackWordIndex(null);
 
       if (restartTimeoutRef.current) {
         clearTimeout(restartTimeoutRef.current);
@@ -174,7 +335,7 @@ export function SentenceTraining({ exercise, onUseSuggestion, onPickRandomStory 
       audio.removeEventListener("play", handlePlay);
       audio.removeEventListener("canplay", handleCanPlay);
     };
-  }, [audioBlockedMessage, exercise.sentenceId, logPlaybackError]);
+  }, [audioBlockedMessage, exercise.sentenceId, logPlaybackError, playbackSpeed]);
 
   const openSpeedDialog = () => {
     setIsSpeedDialogOpen(true);
@@ -198,11 +359,6 @@ export function SentenceTraining({ exercise, onUseSuggestion, onPickRandomStory 
   const handleTrackTouchEnd = () => {
     clearLongPressTimeout();
   };
-
-  const questionByIndex = useMemo(
-    () => new Map(exercise.questions.map((question) => [question.tokenIndex, question])),
-    [exercise.questions],
-  );
 
   const activeQuestion =
     activeQuestionIndex !== null ? questionByIndex.get(activeQuestionIndex) : undefined;
@@ -288,6 +444,10 @@ export function SentenceTraining({ exercise, onUseSuggestion, onPickRandomStory 
       }
     }
 
+    if (wordTimestamps.length === 0) {
+      void loadSentenceTranscript();
+    }
+
     try {
       await audioRef.current.play();
       audioRef.current.playbackRate = playbackSpeed;
@@ -365,6 +525,10 @@ export function SentenceTraining({ exercise, onUseSuggestion, onPickRandomStory 
 
             if (answer && !answer.isCorrect) {
               cardClassName.push(styles.wordCardWrong);
+            }
+
+            if (activePlaybackWordIndex === index) {
+              cardClassName.push(styles.wordCardPlaying);
             }
 
             return (
@@ -445,6 +609,7 @@ export function SentenceTraining({ exercise, onUseSuggestion, onPickRandomStory 
                       },
                     }));
                     setActiveQuestionIndex(null);
+                    pausedQuestionIndexesRef.current.add(activeQuestionIndex);
 
                     startTransition(async () => {
                       await recordSentenceAnswer({
@@ -452,6 +617,14 @@ export function SentenceTraining({ exercise, onUseSuggestion, onPickRandomStory 
                         isCorrect,
                       });
                     });
+
+                    if (shouldResumeAfterAnswerRef.current && audioRef.current?.src) {
+                      shouldResumeAfterAnswerRef.current = false;
+                      void audioRef.current.play().catch((error) => {
+                        logPlaybackError("Resume after answer failed", error);
+                        setAudioError(t("sentence.audioBlocked"));
+                      });
+                    }
                   }}
                   type="button"
                 >

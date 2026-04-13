@@ -22,6 +22,19 @@ declare module "openai" {
     input: string;
   }
 
+  export interface TranscriptionWord {
+    word: string;
+    start: number;
+    end: number;
+  }
+
+  export interface TranscriptionCreateParams {
+    model: string;
+    response_format?: "verbose_json" | "json" | "text";
+    timestamp_granularities?: Array<"word" | "segment">;
+    file: unknown;
+  }
+
   export default class OpenAI {
     constructor(options: { apiKey: string });
     responses: {
@@ -39,6 +52,9 @@ declare module "openai" {
     audio: {
       speech: {
         create(params: SpeechCreateParams): Promise<{ arrayBuffer(): Promise<ArrayBuffer> }>;
+      };
+      transcriptions: {
+        create(params: TranscriptionCreateParams): Promise<{ words?: TranscriptionWord[] }>;
       };
     };
   }
