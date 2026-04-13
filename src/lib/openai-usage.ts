@@ -11,6 +11,13 @@ interface ResolvedOpenAiAccess {
   keySource: "system" | "user";
 }
 
+export class OpenAiBudgetExceededError extends Error {
+  constructor(public readonly userId: number) {
+    super("Monthly OpenAI budget exceeded for this user.");
+    this.name = "OpenAiBudgetExceededError";
+  }
+}
+
 const MODEL_PRICING_PER_1M_TOKENS: Record<string, { input: number; output: number; cachedInput?: number }> = {
   "gpt-5.4-mini": { input: 0.25, output: 2.0, cachedInput: 0.025 },
 };
@@ -99,7 +106,7 @@ export async function resolveOpenAiAccess(userId: number): Promise<ResolvedOpenA
   const spentThisMonth = Number(spentRow.spent ?? 0);
 
   if (modelLimitUsd - spentThisMonth <= 0) {
-    throw new Error("Monthly OpenAI budget exceeded for this user.");
+    throw new OpenAiBudgetExceededError(user.id);
   }
 
   return {
