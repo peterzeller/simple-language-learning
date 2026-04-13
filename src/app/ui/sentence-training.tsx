@@ -230,21 +230,32 @@ export function SentenceTraining({ exercise, onUseSuggestion, onPickRandomStory 
       ))?.[0] ?? null;
       setActivePlaybackWordIndex(currentWordIndex);
 
-      if (!isPlayingRef.current || currentWordIndex === null) {
+      if (!isPlayingRef.current) {
         return;
       }
+      const nextQuestionToPause = Array.from(questionByIndexRef.current.keys()).find((tokenIndex) => {
+        if (pausedQuestionIndexesRef.current.has(tokenIndex)) {
+          return false;
+        }
 
-      const isQuestionWord = questionByIndexRef.current.has(currentWordIndex);
-      const hasAnswer = Boolean(answersRef.current[currentWordIndex]);
+        if (answersRef.current[tokenIndex]) {
+          return false;
+        }
 
-      if (!isQuestionWord || hasAnswer || pausedQuestionIndexesRef.current.has(currentWordIndex)) {
-        return;
+        const timing = tokenTimingByIndexRef.current.get(tokenIndex);
+        if (!timing) {
+          return false;
+        }
+
+        return currentTime >= timing.endSeconds;
+      });
+
+      if (nextQuestionToPause !== undefined) {
+        pausedQuestionIndexesRef.current.add(nextQuestionToPause);
+        shouldResumeAfterAnswerRef.current = true;
+        setActiveQuestionIndex(nextQuestionToPause);
+        audio.pause();
       }
-
-      pausedQuestionIndexesRef.current.add(currentWordIndex);
-      shouldResumeAfterAnswerRef.current = true;
-      setActiveQuestionIndex(currentWordIndex);
-      audio.pause();
     };
 
     const handleEnded = () => {
